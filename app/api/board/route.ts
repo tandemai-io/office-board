@@ -1,0 +1,7 @@
+import {getChatGPTUser} from '@/app/chatgpt-auth';
+import {BoardError,getState,mutate} from '@/lib/controller';
+export const dynamic='force-dynamic';
+const response=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store'}});
+function failure(error:unknown){return response({error:error instanceof BoardError?error.message:error instanceof Error&&/board|row|word|message|character/i.test(error.message)?error.message:'The update could not be completed. Please try again.'},error instanceof BoardError?error.status:500);}
+export async function GET(){try{const user=await getChatGPTUser();if(!user)return response({error:'Please sign in.'},401);return response(await getState(user));}catch(e){return failure(e);}}
+export async function POST(request:Request){try{const user=await getChatGPTUser();if(!user)return response({error:'Please sign in.'},401);const origin=request.headers.get('origin');if(origin&&origin!==new URL(request.url).origin)return response({error:'Request origin is not allowed.'},403);if(!request.headers.get('content-type')?.startsWith('application/json'))return response({error:'Use a JSON request.'},415);const raw=await request.text();if(raw.length>10000)return response({error:'Request is too large.'},413);let body:Record<string,unknown>;try{body=JSON.parse(raw);}catch{return response({error:'Invalid JSON.'},400);}return response(await mutate(user,body));}catch(e){return failure(e);}}
