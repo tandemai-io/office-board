@@ -61,8 +61,8 @@ export class CollegeClient {
   let detail=apiErrors?Object.values(data.errors).filter(v=>typeof v==='string').join(' '):'';
   for(const savedKey of Object.values(this.keys))if(savedKey)detail=detail.split(savedKey).join('[key hidden]');
   detail=detail.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[account hidden]').slice(0,220);
-  const minuteLimit=(response.ok||response.status===429)&&!!apiErrors&&/requests per minute/i.test(detail);
-  if(apiErrors)u.retryAt=this.time+(minuteLimit?60000:600000);
+  const minuteLimit=(response.ok||response.status===429)&&!!apiErrors&&Object.entries(data.errors).every(([field,value])=>/^(rateLimit|requests)$/i.test(field)&&typeof value==='string'&&/requests per minute/i.test(value));
+  if(apiErrors)u.retryAt=Math.max(u.retryAt,this.time+(minuteLimit?60000:600000));
   await this.persist();
   if(minuteLimit)throw new CollegeRateLimitError(`API-Sports: ${detail}`);
   if(!response.ok)throw new Error(response.status===401||response.status===403?`${providerName(p)} rejected its key. Update the college connection.`:response.status===429?`${providerName(p)} reached a free rate limit.`:`${providerName(p)} is unavailable (HTTP ${response.status}).`);
