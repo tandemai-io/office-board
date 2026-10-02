@@ -33,5 +33,10 @@ export function gameScene(game:SportsGame,stale=false,timeZone='America/Los_Ange
  const label=stale?'SCORES DELAYED':live?'LIVE':game.state==='final'?'FINAL':game.state==='scheduled'?'UPCOMING':game.state.toUpperCase();
  const points=(score:number|null)=>score===null?'--':String(score);
  const detail=gameStatus(game,timeZone).toUpperCase().replace(/[^A-Z0-9 :/.,'-]/g,'').slice(0,22);
- return {text:`${game.league} ${label}\n\n${game.away.abbreviation} ${points(game.away.score)} - ${points(game.home.score)} ${game.home.abbreviation}\n\n${detail}`,alignment:'center' as const,accent:67};
+ const scene={text:`${game.league} ${label}\n\n${game.away.abbreviation} ${points(game.away.score)} - ${points(game.home.score)} ${game.home.abbreviation}\n\n${detail}`,alignment:'center' as const,accent:67};
+ const grid=formatBoard(scene.text,scene.alignment,scene.accent);
+ grid[5]=teamColorStrip(game.league,game.away.abbreviation,game.home.abbreviation);
+ return {...scene,grid};
 }
+import { formatBoard } from './board';
+import { teamColorStrip } from './team-colors';
