@@ -58,7 +58,7 @@ export class CollegeClient {
   if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length)u.retryAt=this.time+600000;
   await this.persist();
   if(!response.ok)throw new Error(response.status===401||response.status===403?`${providerName(p)} rejected its key. Update the college connection.`:response.status===429?`${providerName(p)} reached a free rate limit.`:`${providerName(p)} is unavailable (HTTP ${response.status}).`);
-  if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length)throw new Error('API-Sports could not load college data'+(Object.keys(data.errors).filter(k=>/^(current|league|season|date|timezone|id|parameters)$/i.test(k)).length?' with the requested filters.':'.'));
+  if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length){let detail=Object.values(data.errors).filter(v=>typeof v==='string').join(' ');for(const savedKey of Object.values(this.keys))if(savedKey)detail=detail.split(savedKey).join('[key hidden]');detail=detail.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[account hidden]').slice(0,220);throw new Error(detail?`API-Sports: ${detail}`:'API-Sports could not load college data.');}
   if(p==='big-balls'&&data.error)throw new Error('Big Balls could not provide this college game.');
   return data;
  }
