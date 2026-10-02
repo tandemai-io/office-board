@@ -3,9 +3,9 @@ import {orderGames,type SportsGame,type SportsTeam,type GameState} from './sport
 import {sportsDate} from './sports-api';
 
 export type CollegeProvider='api-sports'|'big-balls';
-export type CollegeQuota={used:number;limit:number;remaining:number;reserve:number;verified:boolean;retryAt:number;blocked:boolean};
+export type CollegeQuota={used:number;limit:number;remaining:number;reserve:number;verified:boolean;retryAt:number;blocked:boolean;error:string|null};
 export class CollegeRateLimitError extends Error {}
-type Usage={day:string;calls:number;remaining:number|null;blocked:boolean;retryAt:number;recent:number[];checkedDay?:string};
+type Usage={day:string;calls:number;remaining:number|null;blocked:boolean;retryAt:number;recent:number[];checkedDay?:string;error?:string|null};
 type Reference={game:SportsGame;ids:Partial<Record<CollegeProvider,string>>};
 export type CollegeBook={usage:Record<CollegeProvider,Usage>;season:number|null;seasonChecked:number;references:Record<string,Reference>;active:CollegeProvider|null;reason:string|null};
 export const COLLEGE_REFRESH_MS=120000,COLLEGE_CATALOG_MS=600000,COLLEGE_STALE_MS=360000;
@@ -14,8 +14,8 @@ export const providerName=(p:CollegeProvider)=>p==='api-sports'?'API-Sports':'Bi
 const utcDay=(time:number)=>new Date(time).toISOString().slice(0,10);
 const emptyUsage=():Usage=>({day:'',calls:0,remaining:null,blocked:false,retryAt:0,recent:[]});
 export function newCollegeBook():CollegeBook{return {usage:{'api-sports':emptyUsage(),'big-balls':emptyUsage()},season:null,seasonChecked:0,references:{},active:null,reason:null};}
-function usage(book:CollegeBook,p:CollegeProvider,time:number){const u=book.usage[p];if(u.day!==utcDay(time)){u.day=utcDay(time);u.calls=0;u.remaining=null;u.retryAt=0;u.recent=[];}return u;}
-export function quotaSummary(book:CollegeBook,time=Date.now()) {return Object.fromEntries((['api-sports','big-balls'] as const).map(p=>{const u=usage(book,p,time);return [p,{used:u.calls,limit:CAPS[p],remaining:Math.max(0,Math.min(CAPS[p]-u.calls,u.remaining??CAPS[p])),reserve:10,verified:!!u.checkedDay,retryAt:u.retryAt,blocked:u.blocked}];})) as Record<CollegeProvider,CollegeQuota>;}
+function usage(book:CollegeBook,p:CollegeProvider,time:number){const u=book.usage[p];if(u.day!==utcDay(time)){u.day=utcDay(time);u.calls=0;u.remaining=null;u.retryAt=0;u.recent=[];u.error=null;}return u;}
+export function quotaSummary(book:CollegeBook,time=Date.now()) {return Object.fromEntries((['api-sports','big-balls'] as const).map(p=>{const u=usage(book,p,time);return [p,{used:u.calls,limit:CAPS[p],remaining:Math.max(0,Math.min(CAPS[p]-u.calls,u.remaining??CAPS[p])),reserve:10,verified:!!u.checkedDay,retryAt:u.retryAt,blocked:u.blocked,error:u.error||null}];})) as Record<CollegeProvider,CollegeQuota>;}
 const clean=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const aliases=new Map<string,(typeof COLLEGE_TEAMS)[number]|null>();
 for(const team of COLLEGE_TEAMS)for(const alias of team.aliases){const key=clean(alias);const found=aliases.get(key);aliases.set(key,found&&found.id!==team.id?null:found===null?null:team);}
@@ -62,7 +62,7 @@ export class CollegeClient {
   for(const savedKey of Object.values(this.keys))if(savedKey)detail=detail.split(savedKey).join('[key hidden]');
   detail=detail.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[account hidden]').slice(0,220);
   const minuteLimit=(response.ok||response.status===429)&&!!apiErrors&&Object.entries(data.errors).every(([field,value])=>/^(rateLimit|requests)$/i.test(field)&&typeof value==='string'&&/requests per minute/i.test(value));
-  if(apiErrors)u.retryAt=Math.max(u.retryAt,this.time+(minuteLimit?60000:600000));
+  if(apiErrors){u.retryAt=Math.max(u.retryAt,this.time+(minuteLimit?60000:600000));u.error=detail?`API-Sports: ${detail}`:'API-Sports could not load college data.';}
   await this.persist();
   if(minuteLimit)throw new CollegeRateLimitError(`API-Sports: ${detail}`);
   if(!response.ok)throw new Error(response.status===401||response.status===403?`${providerName(p)} rejected its key. Update the college connection.`:response.status===429?`${providerName(p)} reached a free rate limit.`:`${providerName(p)} is unavailable (HTTP ${response.status}).`);
@@ -85,7 +85,7 @@ export class CollegeClient {
   if(!Array.isArray(rows))throw new Error(`${providerName(p)} returned an incomplete schedule.`);return orderGames(rows.map(row=>normalizeCollege(row,p,this.timeZone)));
  }
  private available(p:CollegeProvider){const u=usage(this.book,p,this.time);return !!this.keys[p]&&!u.blocked&&u.retryAt<=this.time&&Math.min(CAPS[p]-u.calls,u.remaining??CAPS[p])>10;}
- private async withFallback<T>(run:(p:CollegeProvider)=>Promise<T>):Promise<T>{let error='Both college feeds are near their free limits or unavailable. Last scores are held; daily quotas reset at midnight UTC.';for(const p of ['api-sports','big-balls'] as const){if(!this.available(p))continue;try{await this.syncUsage(p);if(!this.available(p))continue;const result=await run(p);this.book.active=p;this.book.reason=p==='big-balls'?'Using the free backup while API-Sports is near its limit or unavailable.':null;await this.persist();return result;}catch(e){error=(e as Error).message;}}throw new Error(error);}
+ private async withFallback<T>(run:(p:CollegeProvider)=>Promise<T>):Promise<T>{let error='Both college feeds are near their free limits or unavailable. Last scores are held; daily quotas reset at midnight UTC.';for(const p of ['api-sports','big-balls'] as const){if(!this.available(p))continue;try{await this.syncUsage(p);if(!this.available(p))continue;const result=await run(p);usage(this.book,p,this.time).error=null;this.book.active=p;this.book.reason=p==='big-balls'?'Using the free backup while API-Sports is near its limit or unavailable.':null;await this.persist();return result;}catch(e){error=(e as Error).message;usage(this.book,p,this.time).error=error;await this.persist();}}throw new Error(error);}
  private remember(game:SportsGame,p:CollegeProvider){const candidates=Object.entries(this.book.references).filter(([,r])=>sameCollegeGame(r.game,game));const stable=candidates.length===1?candidates[0][0]:game.id;const previous=this.book.references[stable];this.book.references[stable]={game:{...game,id:stable},ids:{...previous?.ids,[p]:game.id.slice(3)}};return {...game,id:stable};}
  async schedule(){return this.withFallback(async p=>{const games=await this.catalog(p,sportsDate(this.time,this.timeZone));for(const [id,r] of Object.entries(this.book.references))if(this.time-Date.parse(r.game.startsAt||'')>7*86400000)delete this.book.references[id];return games.map(g=>this.remember(g,p));});}
  async selected(id:string){const reference=this.book.references[id];if(!reference)throw new Error('Refresh the college game list before selecting a game.');return this.withFallback(async p=>{
