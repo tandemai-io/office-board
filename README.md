@@ -68,3 +68,5 @@ Authenticated `GET /api/board` reads shared state. `GET /api/sports?league=NFL` 
 ## Tandem brand files
 
 The header uses the supplied original transparent Tandem symbol and wordmark PNGs. Original downloads and the full Brand Toolkit Version 001 PDF are attached in the footer under **Brand files**. Logo assets are served from `public/brand/` and preserved unmodified. The original 51 MB PDF is attached in R2 and downloaded through the authenticated `/api/brand/toolkit` route, which keeps it within the private Site audience. The UI uses the toolkit's Black, warm neutral background, Off-white and tan palette, with existing typography retained at the user's request.
+
+If API-Sports temporarily rejects verification with its minute-rate-limit response, its key is saved encrypted with an awaiting-verification badge. Due college checks retry verification after the cooldown and keep using the backup in the meantime. Authentication failures still reject the key.

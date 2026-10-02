@@ -3,6 +3,8 @@ import {orderGames,type SportsGame,type SportsTeam,type GameState} from './sport
 import {sportsDate} from './sports-api';
 
 export type CollegeProvider='api-sports'|'big-balls';
+export type CollegeQuota={used:number;limit:number;remaining:number;reserve:number;verified:boolean;retryAt:number;blocked:boolean};
+export class CollegeRateLimitError extends Error {}
 type Usage={day:string;calls:number;remaining:number|null;blocked:boolean;retryAt:number;recent:number[];checkedDay?:string};
 type Reference={game:SportsGame;ids:Partial<Record<CollegeProvider,string>>};
 export type CollegeBook={usage:Record<CollegeProvider,Usage>;season:number|null;seasonChecked:number;references:Record<string,Reference>;active:CollegeProvider|null;reason:string|null};
@@ -13,7 +15,7 @@ const utcDay=(time:number)=>new Date(time).toISOString().slice(0,10);
 const emptyUsage=():Usage=>({day:'',calls:0,remaining:null,blocked:false,retryAt:0,recent:[]});
 export function newCollegeBook():CollegeBook{return {usage:{'api-sports':emptyUsage(),'big-balls':emptyUsage()},season:null,seasonChecked:0,references:{},active:null,reason:null};}
 function usage(book:CollegeBook,p:CollegeProvider,time:number){const u=book.usage[p];if(u.day!==utcDay(time)){u.day=utcDay(time);u.calls=0;u.remaining=null;u.retryAt=0;u.recent=[];}return u;}
-export function quotaSummary(book:CollegeBook,time=Date.now()) {return Object.fromEntries((['api-sports','big-balls'] as const).map(p=>{const u=usage(book,p,time);return [p,{used:u.calls,limit:CAPS[p],remaining:Math.max(0,Math.min(CAPS[p]-u.calls,u.remaining??CAPS[p])),reserve:10}];})) as Record<CollegeProvider,{used:number;limit:number;remaining:number;reserve:number}>;}
+export function quotaSummary(book:CollegeBook,time=Date.now()) {return Object.fromEntries((['api-sports','big-balls'] as const).map(p=>{const u=usage(book,p,time);return [p,{used:u.calls,limit:CAPS[p],remaining:Math.max(0,Math.min(CAPS[p]-u.calls,u.remaining??CAPS[p])),reserve:10,verified:!!u.checkedDay,retryAt:u.retryAt,blocked:u.blocked}];})) as Record<CollegeProvider,CollegeQuota>;}
 const clean=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const aliases=new Map<string,(typeof COLLEGE_TEAMS)[number]|null>();
 for(const team of COLLEGE_TEAMS)for(const alias of team.aliases){const key=clean(alias);const found=aliases.get(key);aliases.set(key,found&&found.id!==team.id?null:found===null?null:team);}
@@ -55,10 +57,16 @@ export class CollegeClient {
   let data:any;try{data=await response.json();}catch{await this.persist();throw new Error(`${providerName(p)} returned an unreadable response.`);}
   if(response.status===401||response.status===403)u.blocked=true;
   if(response.status===429){if(p==='big-balls'&&data.meta?.limiting_bucket==='day')u.remaining=0;const retry=Number(response.headers.get('Retry-After'));const breaker=response.headers.get('X-RateLimit-4xx-Cooldown');u.retryAt=this.time+Math.max(breaker?600000:60000,Number.isFinite(retry)?retry*1000:60000);}
-  if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length)u.retryAt=this.time+600000;
+  const apiErrors=p==='api-sports'&&data.errors&&Object.keys(data.errors).length;
+  let detail=apiErrors?Object.values(data.errors).filter(v=>typeof v==='string').join(' '):'';
+  for(const savedKey of Object.values(this.keys))if(savedKey)detail=detail.split(savedKey).join('[key hidden]');
+  detail=detail.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[account hidden]').slice(0,220);
+  const minuteLimit=(response.ok||response.status===429)&&!!apiErrors&&/requests per minute/i.test(detail);
+  if(apiErrors)u.retryAt=this.time+(minuteLimit?60000:600000);
   await this.persist();
+  if(minuteLimit)throw new CollegeRateLimitError(`API-Sports: ${detail}`);
   if(!response.ok)throw new Error(response.status===401||response.status===403?`${providerName(p)} rejected its key. Update the college connection.`:response.status===429?`${providerName(p)} reached a free rate limit.`:`${providerName(p)} is unavailable (HTTP ${response.status}).`);
-  if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length){let detail=Object.values(data.errors).filter(v=>typeof v==='string').join(' ');for(const savedKey of Object.values(this.keys))if(savedKey)detail=detail.split(savedKey).join('[key hidden]');detail=detail.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[account hidden]').slice(0,220);throw new Error(detail?`API-Sports: ${detail}`:'API-Sports could not load college data.');}
+  if(apiErrors)throw new Error(detail?`API-Sports: ${detail}`:'API-Sports could not load college data.');
   if(p==='big-balls'&&data.error)throw new Error('Big Balls could not provide this college game.');
   return data;
  }
