@@ -59,3 +59,7 @@ Production schema changes belong in `db/schema.ts` plus append-only generated Dr
 ## API
 
 Authenticated `GET /api/board` reads shared state. Authenticated same-origin `POST /api/board` accepts messages, modes, pause/resume, cancellation, settings and owner-only connection/default edits. `POST /api/controller` requires the separate server controller token and acquires the same durable lease as interactive writes. It never returns provider credentials.
+
+## Tandem brand files
+
+The header uses the supplied original transparent Tandem symbol and wordmark PNGs. Original downloads and the full Brand Toolkit Version 001 PDF are attached in the footer under **Brand files**. Logo assets are served from `public/brand/` and preserved unmodified. The original 51 MB PDF is attached in R2 and downloaded through the authenticated `/api/brand/toolkit` route, which keeps it within the private Site audience. The UI uses the toolkit's Black, warm neutral background, Off-white and tan palette, with existing typography retained at the user's request.
