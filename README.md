@@ -17,7 +17,7 @@ Scores display today's selected games, preferring an active game, then a complet
 
 ## Timing and background runner
 
-The linked Sites cloud task calls the authenticated controller approximately every five minutes. This is a scheduled task, not a hard real-time timer. Scheduled starts, message expiration and score refresh can occur on the next run. The browser only reads state every ten seconds; unattended operation does not depend on an open browser.
+A runner can call the authenticated controller approximately every five minutes. The GitHub Actions workflow is prepared with manual dispatch; its automatic schedule is disabled until the runner is chosen. Sites cloud tasks support hourly cadence. This is a scheduled task, not a hard real-time timer. Scheduled starts, message expiration and score refresh can occur on the next run. The browser reads state every ten seconds and checks due work every minute; unattended operation does not depend on an open browser.
 
 Each cloud run must:
 
@@ -26,7 +26,9 @@ Each cloud run must:
 3. POST to the Site's current live URL plus `/api/controller`. Supply both `OAI-Sites-Authorization: Bearer <token>` (Site gateway) and `Authorization: Bearer <token>` (application controller). An HTTP 200 result contains the saved `lastTick`; 409 means another writer is active and can be retried once later. Other failures require attention.
 4. Read the POST result as verification of the committed controller state. Routine runs remain quiet. Notify only when there is a meaningful provider/controller error requiring action, or when the source connection is missing and prevents a requested integration.
 
-The controller can be tested before provider keys are supplied: it updates shared previews and heartbeat without contacting the physical board. Dashboard background status becomes stale after 15 minutes without a background heartbeat.
+The controller can be tested before provider keys are supplied: it updates shared previews and heartbeat without contacting the physical board. Dashboard background status requires a configured cadence and becomes stale after two intervals or at least 15 minutes without a background heartbeat.
+
+For GitHub Actions, configure the repository variable `BOARD_URL` and secret `CONTROLLER_TOKEN`, and enable the commented schedule in `.github/workflows/board-controller.yml`. Private repository runs consume GitHub Actions minutes; scheduled runs may be delayed by GitHub. Never copy a secret into the workflow file.
 
 ## Local development
 

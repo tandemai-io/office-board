@@ -1,0 +1,43 @@
+name: Board controller
+on:
+  workflow_dispatch:
+# Enable only after choosing this runner:
+#  schedule:
+#    - cron: '*/5 * * * *'
+permissions: {}
+concurrency:
+  group: board-controller
+  cancel-in-progress: false
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check the office board
+        env:
+          BOARD_URL: ${{ vars.BOARD_URL }}
+          CONTROLLER_TOKEN: ${{ secrets.CONTROLLER_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.request, urllib.error
+          token = os.environ['CONTROLLER_TOKEN']
+          url = os.environ['BOARD_URL'].rstrip('/') + '/api/controller'
+          if not token or not url.startswith('https://'):
+              sys.exit('Configure BOARD_URL and CONTROLLER_TOKEN before running.')
+          headers = {'Content-Type': 'application/json',
+                     'OAI-Sites-Authorization': 'Bearer ' + token,
+                     'Authorization': 'Bearer ' + token}
+          for attempt in range(2):
+              try:
+                  response = urllib.request.urlopen(urllib.request.Request(url, data=b'{}', headers=headers), timeout=35)
+                  result = json.load(response)
+                  print(json.dumps(result))
+                  if not result.get('ok') or result.get('error') or any((result.get('feedErrors') or {}).values()):
+                      sys.exit('The controller or a provider needs attention; check the dashboard.')
+                  break
+              except urllib.error.HTTPError as error:
+                  if error.code == 409 and attempt == 0:
+                      time.sleep(5)
+                      continue
+                  sys.exit('Controller request failed with HTTP ' + str(error.code))
+          PY
