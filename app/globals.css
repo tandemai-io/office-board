@@ -14,3 +14,56 @@
 @media(prefers-color-scheme:dark){:root{--background:#11100E;--foreground:#F5F0ED;--card:#1D1B19;--card-foreground:#F5F0ED;--popover:#25221F;--popover-foreground:#F5F0ED;--primary:#F5F0ED;--primary-foreground:#11100E;--secondary:#2D2925;--secondary-foreground:#F5F0ED;--muted:#2D2925;--muted-foreground:#BAB0A6;--border:#49413A;--input:#49413A;--ring:#D3CAC2}.brand-logo-symbol,.brand-logo-wordmark{filter:invert(1)}.mode-button.active{background:#332D27;border-color:#867565}.mode-button>div{color:#D3CAC2}.avatar{background:#332D27;color:#D3CAC2}}
 @media(max-width:800px){.wordmark{gap:12px}.brand-logo-wordmark{width:126px}.brand-logo-symbol{width:30px}}
 @media(max-width:450px){.app-header{padding-left:18px;padding-right:18px}.brand-logo-wordmark{width:112px}.brand-logo-symbol{width:28px}.wordmark{gap:10px}.header-right{gap:8px}}
+/* Sports selection and the exact-cell Vestaboard editor. */
+.compose-tabs,.sports-leagues{display:flex;align-items:center;gap:.4rem;margin:1rem 0;}
+.compose-tabs>button,.sports-leagues>button:not(.text-button){border:1px solid var(--border);border-radius:.45rem;padding:.65rem 1.15rem;font-size:.9rem;background:var(--background);color:var(--foreground);cursor:pointer;}
+.compose-tabs>button.active,.sports-leagues>button.active{background:var(--foreground);color:var(--background);border-color:var(--foreground);}
+.visual-composer-copy{font-size:.95rem;line-height:1.6;margin:1rem 0 1.5rem;color:var(--muted-foreground);}
+.visual-palette{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin:.25rem 0 1rem;}
+.paint-color{width:2rem;height:2rem;border:2px solid #7778;border-radius:.3rem;cursor:pointer;outline-offset:3px;}
+.paint-color.chosen{outline:2px solid var(--foreground);}
+.editable-frame{position:relative;touch-action:none;}
+.editable-grid .flap{padding:0;cursor:crosshair;outline:none;}
+.editable-grid .flap.cell-cursor{outline:2px solid #f9f9f9;outline-offset:-2px;z-index:2;}
+.editable-frame:before,.editable-frame:after{content:"";position:absolute;z-index:3;pointer-events:none;opacity:.3;}
+.editable-frame:before{height:0;top:50%;left:.7rem;right:.7rem;border-top:1px dashed #fff;}
+.editable-frame:after{width:0;left:50%;top:.7rem;bottom:.7rem;border-left:1px dashed #fff;}
+.visual-toolbar{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-top:1rem;flex-wrap:wrap;}
+.visual-toolbar>div{display:flex;gap:.3rem;}
+.editor-tool{display:grid;place-items:center;width:2.6rem;height:2.6rem;border:1px solid var(--border);border-radius:.4rem;background:var(--background);color:var(--muted-foreground);cursor:pointer;}
+.editor-tool.active{background:var(--foreground);color:var(--background);}
+.editor-tool:disabled{opacity:.35;cursor:default;}
+.brush-sizes,.selection-nudges{display:flex;gap:.5rem;align-items:center;justify-content:center;margin:.7rem 0;}
+.brush-sizes button,.selection-nudges button{display:grid;place-items:center;width:2.5rem;height:2.5rem;border:1px solid var(--border);border-radius:.4rem;background:var(--background);color:var(--foreground);cursor:pointer;}
+.brush-sizes button.active{border-color:var(--foreground);}
+.brush-sizes span{display:block;border-radius:100%;background:currentColor;}
+.editor-hint,.board-text-input>span{font-size:.875rem;line-height:1.5;color:var(--muted-foreground);margin:.75rem 0;}
+.board-text-input{margin-top:1rem;display:flex;flex-direction:column;gap:.45rem;}
+.board-text-input label{font-size:.9rem;font-weight:600;}
+.board-text-input input{width:100%;padding:.75rem;border:1px solid var(--border);border-radius:.45rem;background:var(--background);color:var(--foreground);font-size:1rem;}
+.sports-dialog{width:min(48rem,calc(100vw - 2rem))!important;max-width:48rem!important;max-height:85vh;overflow:auto;}
+.sports-leagues .text-button{margin-left:auto;}
+.sports-connect{text-align:center;padding:2rem 1rem;}
+.sports-connect>svg{margin:0 auto .75rem;}
+.sports-connect h3{font-size:1.1rem;margin-bottom:.6rem;}
+.sports-connect p{max-width:30rem;margin:.5rem auto 1.25rem;color:var(--muted-foreground);line-height:1.6;}
+.sports-connect .button{margin:auto;}
+.games-section-title{display:flex;align-items:center;gap:.6rem;margin:1.15rem 0 .75rem;font-size:1rem;font-weight:600;}
+.games-section-title span{font-weight:400;color:var(--muted-foreground);}
+.games-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;}
+.game-card{border:1px solid var(--border);border-radius:.6rem;padding:1rem;min-width:0;}
+.game-card.followed{border-color:var(--foreground);}
+.game-card-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.9rem;}
+.game-status{display:flex;align-items:center;gap:.35rem;font-size:.85rem;color:var(--muted-foreground);}
+.game-status.live{color:#19854a;font-weight:600;}
+.game-teams>div{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin:.55rem 0;}
+.game-teams strong{font-size:.95rem;font-weight:500;line-height:1.35;}
+.game-teams span{font-variant-numeric:tabular-nums;font-size:1.35rem;font-weight:600;}
+.game-follow-button{width:100%;justify-content:center;margin-top:.75rem;}
+.game-clock,.no-live-games,.sports-loading,.sports-data-note{color:var(--muted-foreground);font-size:.9rem;line-height:1.5;}
+.sports-data-note{border-top:1px solid var(--border);padding-top:1rem;margin-top:1rem;}
+.following-game{display:flex;justify-content:space-between;gap:1rem;align-items:center;border:1px solid var(--border);padding:1rem;border-radius:.6rem;margin-top:1rem;}
+.following-game strong{display:block;font-size:.95rem;margin-top:.4rem;}
+.following-game p{font-size:.85rem;color:var(--muted-foreground);line-height:1.5;margin:.35rem 0 0;}
+.following-game>div:last-child{display:flex;flex-direction:column;gap:.4rem;flex-shrink:0;align-items:center;}
+@media(max-width:600px){.games-grid{grid-template-columns:1fr;}.sports-dialog{width:calc(100vw - 1rem)!important;}.following-game{align-items:flex-start;flex-direction:column;}.following-game>div:last-child{flex-direction:row;}.visual-palette{gap:.5rem;}.paint-color{width:1.8rem;height:1.8rem;}.editor-tool{width:2.3rem;height:2.3rem;}}

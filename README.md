@@ -6,18 +6,20 @@ A private, shared Vestaboard controller with a 22 × 6 preview, messages, schedu
 
 1. Open the dashboard and select **Connect board**. In Vestaboard's Advanced Settings, create a Cloud API token with Read and Write access. Paste it into the password field. Saving checks read access; Send, a mode change, or the next background check can write to the board.
 2. In **Connections → GitHub**, choose the product repository to follow, and a fine-grained GitHub token with **Pull requests: read** for that repository. The dashboard source repository does not have to be the repository watched. Connecting starts from now rather than replaying old PRs.
-3. For scores, obtain a BALLDONTLIE key and choose NBA or NFL plus up to four team abbreviations. Basic Games and Teams are available on the provider's free plan, subject to its current limits. The dashboard verifies teams and endpoint access before saving.
+3. For scores, connect a free BALLDONTLIE key in **Connections → Sports**. Click **Sports**, choose NFL or NBA, and select **Follow on board** on a game. The picker includes live games, today’s results and the next three days, including preseason. Saving the key verifies Games access.
 4. Share the private Site with selected teammates using the Site's sharing controls. The configured owner manages connections and defaults; other authorized visitors can send, schedule, pause and select modes.
 
 Manual Send Now takes priority. Scheduled messages and integration events wait for the active hold. Physical requests are serialized and spaced by at least 20 seconds. Quiet hours prevent writes, and messages remain queued. Meeting and Guests modes suppress PR events. PR events older than 30 minutes expire instead of replaying a stale celebration.
 
 GitHub polling can identify a PR's author and the person who merged it. Generic `updated_at` also changes for comments and reviews; an update is labeled **PR updated / author**, never as a verified push actor. Accurate last-pusher attribution is a follow-up webhook integration.
 
-Scores display today's selected games, preferring an active game, then a completed game. Multiple selected teams are supported; this first version shows one game at a time. Failed or stale score data falls back to the Sports default and reports the provider error. No sample scores are presented as live data.
+Sports follow the exact selected game ID through midnight and the final score. The followed game is checked every 30 seconds while the dashboard is open; terminal games every five minutes. NBA clock/period are shown when supplied; NFL uses provider status without inventing a clock. Failed requests retain the last scores, report the error and label nonterminal scores delayed after two minutes. Catalogs use a shared two-minute cache. A shared five-request sliding minute budget protects the free feed from rapid game changes across teammates. No sample scores are presented as live data.
+
+**Auto** formats text with alignment and a color strip. **Visual** edits the exact 22×6 grid: eight Vestaboard flap colors, brush sizes, connected fill, selection/recolor/movement, direct cell typing, eraser, undo/redo and clear. White palette buttons have a black outline. Visual messages persist the complete character matrix so sending, scheduling and reloading preserve placement; erasing produces blank (0) and explicit Black uses code 70. App swatch hex values are screenshot approximations; the actual board receives official character codes.
 
 ## Timing and background runner
 
-A runner can call the authenticated controller approximately every five minutes. The GitHub Actions workflow is prepared with manual dispatch; its automatic schedule is disabled until the runner is chosen. Sites cloud tasks support hourly cadence. This is a scheduled task, not a hard real-time timer. Scheduled starts, message expiration and score refresh can occur on the next run. The browser reads state every ten seconds and checks due work every minute; unattended operation does not depend on an open browser.
+A runner can call the authenticated controller approximately every five minutes. The GitHub Actions workflow is prepared with manual dispatch; its automatic schedule is disabled until the runner is chosen. Sites cloud tasks support hourly cadence. This is a scheduled task, not a hard real-time timer. Scheduled starts, message expiration and score refresh can occur on the next run. The browser reads state every ten seconds and checks due work every 30 seconds. Without an active background runner, updates and scheduled messages require an open dashboard; browser background throttling may delay checks.
 
 Each cloud run must:
 
@@ -32,7 +34,7 @@ For GitHub Actions, configure the repository variable `BOARD_URL` and secret `CO
 
 ## Local development
 
-Use Node 22.13+.
+Use Node 22.13+ for development; controller integration tests use Node 25+ built-in SQLite.
 
 ```sh
 npm install
@@ -51,14 +53,14 @@ Open the printed localhost URL at `/signin-with-chatgpt?return_to=%2F` for the b
 ```sh
 npx tsc --noEmit
 npm run lint
-node --experimental-strip-types --test tests/board.test.mjs
+node --test tests/*.test.mjs
 ```
 
 Production schema changes belong in `db/schema.ts` plus append-only generated Drizzle migrations. Native Sites publishing applies migrations, configures D1 and deploys the Worker. `build/sites-worker.ts` preserves the platform fetch handler. Do not put credentials into Git, browser storage, URLs or the hosting manifest.
 
 ## API
 
-Authenticated `GET /api/board` reads shared state. Authenticated same-origin `POST /api/board` accepts messages, modes, pause/resume, cancellation, settings and owner-only connection/default edits. `POST /api/controller` requires the separate server controller token and acquires the same durable lease as interactive writes. It never returns provider credentials.
+Authenticated `GET /api/board` reads shared state. `GET /api/sports?league=NFL` (or NBA) reads the cached schedule. Owner-only sports connection changes save an encrypted API key; authorized teammates can follow and stop individual games. Authenticated same-origin `POST /api/board` accepts messages, modes, pause/resume, cancellation, settings and owner-only connection/default edits. `POST /api/controller` requires the separate server controller token and acquires the same durable lease as interactive writes. It never returns provider credentials.
 
 ## Tandem brand files
 
