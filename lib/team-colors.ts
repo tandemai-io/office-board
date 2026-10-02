@@ -7,7 +7,7 @@ type TeamColors = readonly [primary: number, secondary: number];
 // https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams
 // Vestaboard has eight colors: navy uses blue, gold uses yellow, silver uses
 // white, and brown uses black. A dark alternate blue uses black for contrast.
-const TEAM_COLORS: Record<SportsLeague, Record<string, TeamColors>> = {
+const TEAM_COLORS: Record<Exclude<SportsLeague,'NCAAF'>, Record<string, TeamColors>> = {
   NFL: {
     ARI: [63, 69], ATL: [63, 70], BAL: [68, 70], BUF: [67, 63],
     CAR: [67, 70], CHI: [67, 64], CIN: [64, 70], CLE: [70, 64],
@@ -30,19 +30,20 @@ const TEAM_COLORS: Record<SportsLeague, Record<string, TeamColors>> = {
   },
 };
 
-const ALIASES: Record<SportsLeague, Record<string, string>> = {
+const ALIASES: Record<Exclude<SportsLeague,'NCAAF'>, Record<string, string>> = {
   NFL: { LA: 'LAR', WSH: 'WAS', ARZ: 'ARI', BLT: 'BAL', CLV: 'CLE', HST: 'HOU' },
   NBA: { GS: 'GSW', NO: 'NOP', NY: 'NYK', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS', PHO: 'PHX' },
 };
 
 export function teamColors(league: SportsLeague, abbreviation: string): TeamColors {
+  if(league==='NCAAF')return [69,70];
   const key = abbreviation.trim().toUpperCase();
   return TEAM_COLORS[league][ALIASES[league][key] || key] || [69, 70];
 }
 
-export function teamColorStrip(league: SportsLeague, leftTeam: string, rightTeam: string): number[] {
-  const [leftPrimary, leftSecondary] = teamColors(league, leftTeam);
-  const [rightPrimary, rightSecondary] = teamColors(league, rightTeam);
+export function teamColorStrip(league: SportsLeague, leftTeam: string, rightTeam: string, leftColors?:TeamColors, rightColors?:TeamColors): number[] {
+  const [leftPrimary, leftSecondary] = leftColors || teamColors(league, leftTeam);
+  const [rightPrimary, rightSecondary] = rightColors || teamColors(league, rightTeam);
   return [
     ...Array<number>(8).fill(leftPrimary), ...Array<number>(3).fill(leftSecondary),
     ...Array<number>(3).fill(rightSecondary), ...Array<number>(8).fill(rightPrimary),

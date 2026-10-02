@@ -1,14 +1,16 @@
-export type SportsLeague = 'NFL' | 'NBA';
+import { formatBoard } from './board';
+import { teamColorStrip } from './team-colors';
+export type SportsLeague = 'NFL' | 'NBA' | 'NCAAF';
 export type GameState = 'scheduled' | 'in_progress' | 'final' | 'postponed' | 'canceled' | 'delayed' | 'suspended' | 'abandoned' | 'unknown';
 export type SportsSelection = {league:SportsLeague;gameId:string};
-export type SportsTeam = {name:string;abbreviation:string;score:number|null};
-export type SportsGame = {id:string;league:SportsLeague;startsAt:string|null;date:string;state:GameState;status:string;period:number|null;clock:string|null;home:SportsTeam;away:SportsTeam;preseason:boolean};
-export type GamesResult = {league:SportsLeague;games:SportsGame[];fetchedAt:number|null;connected:boolean;error:string|null};
+export type SportsTeam = {name:string;abbreviation:string;score:number|null;identity?:string;colors?:[number,number]};
+export type SportsGame = {id:string;league:SportsLeague;startsAt:string|null;date:string;state:GameState;status:string;period:number|null;clock:string|null;home:SportsTeam;away:SportsTeam;preseason:boolean;provider?:'api-sports'|'big-balls'};
+export type GamesResult = {league:SportsLeague;games:SportsGame[];fetchedAt:number|null;connected:boolean;error:string|null;provider?:string|null};
 export type ProviderGame = {id:number|string;date?:string;datetime?:string|null;status?:string;status_state?:string;period?:number;time?:string;postponed?:boolean;season_type?:string|number;home_team_score?:number|null;visitor_team_score?:number|null;home_team?:{full_name?:string;name?:string;abbreviation?:string};visitor_team?:{full_name?:string;name?:string;abbreviation?:string}};
 const STATES:GameState[]=['scheduled','in_progress','final','postponed','canceled','delayed','suspended','abandoned','unknown'];
 export const isTerminalGame=(game:SportsGame)=>['final','canceled','abandoned'].includes(game.state);
-export const validLeague=(value:unknown):value is SportsLeague=>value==='NFL'||value==='NBA';
-export const validGameId=(value:unknown):value is string=>typeof value==='string'&&/^[1-9]\d{0,17}$/.test(value);
+export const validLeague=(value:unknown):value is SportsLeague=>value==='NFL'||value==='NBA'||value==='NCAAF';
+export const validGameId=(value:unknown):value is string=>typeof value==='string'&&(/^[1-9]\d{0,17}$/.test(value)||/^as:[1-9]\d{0,17}$/.test(value)||/^bb:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value));
 export function normalizeGame(raw:ProviderGame,league:SportsLeague,preseason=false):SportsGame {
  if(!validGameId(String(raw.id))||!raw.home_team?.abbreviation||!raw.visitor_team?.abbreviation)throw new Error('The score feed returned an incomplete game.');
  const status=typeof raw.status==='string'?raw.status:'Unknown';
@@ -25,7 +27,7 @@ export function orderGames(games:SportsGame[]) {const rank=(g:SportsGame)=>g.sta
 export function gameStatus(game:SportsGame,timeZone='America/Los_Angeles'):string {
  if(game.state==='scheduled')return game.startsAt?new Intl.DateTimeFormat('en-US',{timeZone,weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(Date.parse(game.startsAt)):game.status;
  if(game.state==='in_progress'&&/halftime|intermission|end of/i.test(game.status))return game.status;
- if(game.state==='in_progress'&&game.league==='NBA'&&game.clock){const period=game.period||0;return `${period>4?'OT'+(period-4):period?'Q'+period:'LIVE'} ${game.clock}`;}
+ if(game.state==='in_progress'&&game.clock){const period=game.period||0;return `${period>4?'OT'+(period-4):period?'Q'+period:'LIVE'} ${game.clock}`;}
  return game.state==='final'?'Final':game.state==='unknown'?game.status:game.status||game.state.replace('_',' ');
 }
 export function gameScene(game:SportsGame,stale=false,timeZone='America/Los_Angeles') {
@@ -35,8 +37,6 @@ export function gameScene(game:SportsGame,stale=false,timeZone='America/Los_Ange
  const detail=gameStatus(game,timeZone).toUpperCase().replace(/[^A-Z0-9 :/.,'-]/g,'').slice(0,22);
  const scene={text:`${game.league} ${label}\n\n${game.away.abbreviation} ${points(game.away.score)} - ${points(game.home.score)} ${game.home.abbreviation}\n\n${detail}`,alignment:'center' as const,accent:67};
  const grid=formatBoard(scene.text,scene.alignment,scene.accent);
- grid[5]=teamColorStrip(game.league,game.away.abbreviation,game.home.abbreviation);
+ grid[5]=teamColorStrip(game.league,game.away.abbreviation,game.home.abbreviation,game.away.colors,game.home.colors);
  return {...scene,grid};
 }
-import { formatBoard } from './board';
-import { teamColorStrip } from './team-colors';
