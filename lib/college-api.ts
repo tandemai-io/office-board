@@ -58,7 +58,7 @@ export class CollegeClient {
   if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length)u.retryAt=this.time+600000;
   await this.persist();
   if(!response.ok)throw new Error(response.status===401||response.status===403?`${providerName(p)} rejected its key. Update the college connection.`:response.status===429?`${providerName(p)} reached a free rate limit.`:`${providerName(p)} is unavailable (HTTP ${response.status}).`);
-  if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length)throw new Error('API-Sports could not provide this college game on the connected plan.');
+  if(p==='api-sports'&&data.errors&&Object.keys(data.errors).length)throw new Error('API-Sports could not load college data'+(Object.keys(data.errors).filter(k=>/^(current|league|season|date|timezone|id|parameters)$/i.test(k)).length?' with the requested filters.':'.'));
   if(p==='big-balls'&&data.error)throw new Error('Big Balls could not provide this college game.');
   return data;
  }
@@ -68,9 +68,9 @@ export class CollegeClient {
   u.checkedDay=u.day;await this.persist();
  }
  async validate(p:CollegeProvider){const u=usage(this.book,p,this.time);u.blocked=false;u.retryAt=0;u.checkedDay=undefined;await this.syncUsage(p);
-  if(p==='api-sports')await this.season();else await this.catalog(p,sportsDate(this.time,this.timeZone));
+  if(p==='big-balls')await this.catalog(p,sportsDate(this.time,this.timeZone));
  }
- private async season(){if(this.book.season&&this.time-this.book.seasonChecked<86400000)return this.book.season;const data=await this.request('api-sports','/leagues?id=2&current=true');const entry=data.response?.find((l:any)=>l.league?.id===2);const seasons=entry?.seasons?.filter((s:any)=>s.current&&Number.isInteger(s.year));if(!seasons||seasons.length!==1)throw new Error('The current college football season is unavailable.');this.book.season=seasons[0].year;this.book.seasonChecked=this.time;await this.persist();return this.book.season;}
+ private async season(){if(this.book.season&&this.time-this.book.seasonChecked<86400000)return this.book.season;const data=await this.request('api-sports','/leagues?id=2');const entry=data.response?.find((l:any)=>l.league?.id===2);const seasons=entry?.seasons?.filter((s:any)=>(s.current===true||s.current==='true'||(Date.parse(s.start)<=this.time&&Date.parse(s.end)+86400000>this.time))&&Number.isInteger(Number(s.year)));if(!seasons||seasons.length!==1)throw new Error('The current college football season is unavailable.');this.book.season=Number(seasons[0].year);this.book.seasonChecked=this.time;await this.persist();return this.book.season;}
  private async catalog(p:CollegeProvider,date:string):Promise<SportsGame[]>{let rows:any[];
   if(p==='api-sports'){const season=await this.season();const query=new URLSearchParams({league:'2',season:String(season),date,timezone:this.timeZone});const data=await this.request(p,`/games?${query}`);rows=data.response;}
   else {const query=new URLSearchParams({sport:'american_football',league:'ncaaf',date,tz:this.timeZone,limit:'200',offset:'0'});const data=await this.request(p,`/v1/matches?${query}`);rows=data.data;if(Array.isArray(rows)&&rows.length>=200)throw new Error('The college schedule is too large to load completely. Try again later.');}
