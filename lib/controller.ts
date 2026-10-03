@@ -6,14 +6,14 @@ import {fetchSchedule,fetchSelectedGame,GAME_REFRESH_MS,SCHEDULE_REFRESH_MS,STAL
 
 import {CollegeClient,CollegeRateLimitError,newCollegeBook,quotaSummary,providerName,COLLEGE_REFRESH_MS,COLLEGE_CATALOG_MS,COLLEGE_STALE_MS,type CollegeBook,type CollegeProvider} from './college-api';
 
-type Runtime = {college:CollegeBook;sportsFinalAt:number|null;current:CurrentMessage; lastTick:number|null; lastAccepted:number|null; error:string|null; scheduler:boolean; lastBackground:number|null; githubCursor:number; githubUpdatedAt:number|null; githubError:string|null; sportsUpdatedAt:number|null; sportsError:string|null; sportsScene:Scene|null; sportsGame:SportsGame|null; sportsLists:Partial<Record<SportsLeague,{games:SportsGame[];fetchedAt:number;attemptedAt:number;date:string;error:string|null}>>; sportsFetchedAt:number; retryAt:number};
+type Runtime = {college:CollegeBook;current:CurrentMessage; lastTick:number|null; lastAccepted:number|null; error:string|null; scheduler:boolean; lastBackground:number|null; githubCursor:number; githubUpdatedAt:number|null; githubError:string|null; sportsUpdatedAt:number|null; sportsError:string|null; sportsScene:Scene|null; sportsGame:SportsGame|null; sportsLists:Partial<Record<SportsLeague,{games:SportsGame[];fetchedAt:number;attemptedAt:number;date:string;error:string|null}>>; sportsFetchedAt:number; retryAt:number};
 type Row = {owner_id:string|null; owner_email:string|null; config:string; runtime:string; lease_token:string|null; lease_until:number; last_attempt_at:number};
 type MessageRow = {id:string;title:string;text:string;grid:string|null;alignment:'left'|'center'|'right';accent:number;source:BoardMessage['source'];author:string;scheduled_at:number;duration:number;status:BoardMessage['status'];created_at:number;sent_at:number|null;error:string|null};
 export class BoardError extends Error { constructor(message:string, public status=400){super(message);} }
 function db(){if(!env.DB)throw new BoardError('Shared storage is unavailable.',503);return env.DB;}
 const now=()=>Date.now();
 const name=(u:ChatGPTUser)=>u.fullName||u.email.split('@')[0];
-function initialRuntime():Runtime{return {college:newCollegeBook(),sportsFinalAt:null,current:previewState().current,lastTick:null,lastAccepted:null,error:null,scheduler:false,lastBackground:null,githubCursor:now(),githubUpdatedAt:null,githubError:null,sportsUpdatedAt:null,sportsError:null,sportsScene:null,sportsGame:null,sportsLists:{},sportsFetchedAt:0,retryAt:0};}
+function initialRuntime():Runtime{return {college:newCollegeBook(),current:previewState().current,lastTick:null,lastAccepted:null,error:null,scheduler:false,lastBackground:null,githubCursor:now(),githubUpdatedAt:null,githubError:null,sportsUpdatedAt:null,sportsError:null,sportsScene:null,sportsGame:null,sportsLists:{},sportsFetchedAt:0,retryAt:0};}
 async function init(user?:ChatGPTUser){if(!env.OWNER_EMAIL)throw new BoardError('Dashboard owner configuration is unavailable.',503);await db().prepare('INSERT OR IGNORE INTO controller(id,config,runtime) VALUES(1,?,?)').bind(JSON.stringify(DEFAULT_CONFIG),JSON.stringify(initialRuntime())).run();if(user&&user.email.toLowerCase()===env.OWNER_EMAIL.toLowerCase())await db().prepare('UPDATE controller SET owner_id=?,owner_email=? WHERE id=1 AND owner_id IS NULL').bind(user.userId,user.email).run();}
 async function row(){return (await db().prepare('SELECT * FROM controller WHERE id=1').first<Row>())!;}
 function parse(r:Row){const config={...DEFAULT_CONFIG,...JSON.parse(r.config)} as Config;const runtime={...initialRuntime(),...JSON.parse(r.runtime)} as Runtime;return {config,runtime};}
@@ -61,15 +61,15 @@ async function pollSports(config:Config,runtime:Runtime,lease:string){
  if(config.mode!=='sports'||!config.sportsEnabled||!config.sportsSelection)return;
  const college=config.sportsSelection.league==='NCAAF';
  if(college&&(config.paused||isQuiet(config)))return;
- const terminal=runtime.sportsGame&&isTerminalGame(runtime.sportsGame);
- // College finals get a short correction window, rather than using quota forever.
- if(college&&terminal&&runtime.sportsFinalAt&&now()-runtime.sportsFinalAt>1800000)return;
+ // Keep the final result on the board without spending more provider requests.
+ // An explicit game selection is the only way to start following again.
+ if(runtime.sportsGame&&isTerminalGame(runtime.sportsGame))return;
  const scheduled=college&&runtime.sportsGame?.state==='scheduled'&&Date.parse(runtime.sportsGame.startsAt||'')-now()>1800000;
  const inactive=college&&!!runtime.sportsGame&&!['in_progress','scheduled'].includes(runtime.sportsGame.state);
- const cadence=terminal?(college?600000:300000):(scheduled||inactive)?900000:college?COLLEGE_REFRESH_MS:GAME_REFRESH_MS;
+ const cadence=(scheduled||inactive)?900000:college?COLLEGE_REFRESH_MS:GAME_REFRESH_MS;
  if(now()-runtime.sportsFetchedAt<cadence)return;
  runtime.sportsFetchedAt=now();
- try{const selected=config.sportsSelection;let game:SportsGame;if(selected.league==='NCAAF')game=await (await collegeClient(config,runtime,lease)).selected(selected.gameId);else{const token=await secret('sports');if(!token)throw new Error('Connect the sports score feed.');game=await fetchSelectedGame(token,selected.league,selected.gameId,reserveSportsRequest);}runtime.sportsGame=game;runtime.sportsScene=gameScene(game,false,config.timezone);runtime.sportsUpdatedAt=now();runtime.sportsError=null;if(college&&isTerminalGame(game))runtime.sportsFinalAt??=now();else runtime.sportsFinalAt=null;}
+ try{const selected=config.sportsSelection;let game:SportsGame;if(selected.league==='NCAAF')game=await (await collegeClient(config,runtime,lease)).selected(selected.gameId);else{const token=await secret('sports');if(!token)throw new Error('Connect the sports score feed.');game=await fetchSelectedGame(token,selected.league,selected.gameId,reserveSportsRequest);}runtime.sportsGame=game;runtime.sportsScene=gameScene(game,false,config.timezone);runtime.sportsUpdatedAt=now();runtime.sportsError=null;}
  catch(e){runtime.sportsError=(e as Error).message;}
 }
 async function tickLocked(r:Row,lease:string,background=false,overrideId:string|null=null){const {config,runtime}=parse(r);runtime.lastTick=now();if(background){runtime.scheduler=true;runtime.lastBackground=now();}await pollGithub(config,runtime);await pollSports(config,runtime,lease);if(config.paused||isQuiet(config)){await save(config,runtime,lease);return;}
@@ -96,7 +96,6 @@ export async function mutate(user:ChatGPTUser,body:Record<string,unknown>){await
  const league=body.league,id=body.gameId;if(!validLeague(league)||!validGameId(id)||(league==='NCAAF'?!/^(as:|bb:)/.test(id):!/^[1-9]\d*$/.test(id)))throw new BoardError('Choose an NFL, NBA or college football game.');
  if(!runtime.sportsLists[league]?.games.some(g=>g.id===id))throw new BoardError('Refresh the game list and choose an available game.');
  let game:SportsGame;try{if(league==='NCAAF')game=await (await collegeClient(config,runtime,lease)).selected(id);else{const token=await secret('sports');if(!token)throw new Error('Connect the sports score feed first.');game=await fetchSelectedGame(token,league,id,reserveSportsRequest);}}catch(e){throw new BoardError((e as Error).message,502);}
- runtime.sportsFinalAt=league==='NCAAF'&&isTerminalGame(game)?now():null;
  config.sportsSelection={league,gameId:id};config.sportLeague=league;config.sportsEnabled=true;config.mode='sports';runtime.current.until=0;runtime.sportsGame=game;runtime.sportsScene=gameScene(game,false,config.timezone);runtime.sportsFetchedAt=now();runtime.sportsUpdatedAt=now();runtime.sportsError=null;
  }
  else if(action==='sports-stop'){config.sportsSelection=null;config.mode='work';runtime.current.until=0;runtime.sportsGame=null;runtime.sportsScene=null;runtime.sportsUpdatedAt=null;runtime.sportsError=null;}
