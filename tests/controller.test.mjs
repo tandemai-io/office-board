@@ -77,6 +77,12 @@ test('owner readback distinguishes a different cloud layout and never writes or 
   await assert.rejects(h.controller.mutate({...user,userId:'teammate',email:'team@example.test'},{action:'hardware-check'}),/Only the dashboard owner/);
  }finally{h.close();}
 });
+test('reconnecting a board clears verification from the previous token',async()=>{
+ const h=harness();try{
+  await following(h,true);assert.equal((await h.controller.getState(user)).controller.hardware.matches,true);
+  const state=await h.controller.mutate(user,{action:'connect',kind:'vestaboard',secret:'replacement-test-key'});assert.equal(state.controller.hardware.checkedAt,null);assert.equal(state.controller.hardware.matches,null);assert.equal(state.controller.lastAccepted,null);assert.equal(JSON.parse(h.sql.prepare('SELECT runtime FROM controller').get().runtime).lastForced,false);
+ }finally{h.close();}
+});
 
 test('visual cells survive storage, state reload, scheduling and hardware delivery exactly',async()=>{const h=harness();try{await configured(h,true);const grid=blank();grid[0][0]=69;grid[0][21]=70;grid[4][7]=1;grid[5]=Array(22).fill(63);const sent=await h.controller.mutate(user,{action:'message',grid,duration:60,scheduledAt:h.now()});assert.deepEqual(json(sent.current.grid),grid);assert.deepEqual(json(h.writes.at(-1)),grid);assert.deepEqual(json((await h.controller.getState(user)).messages[0].grid),grid);h.advance(61000);const later=blank();later[2][10]=67;await h.controller.mutate(user,{action:'message',grid:later,duration:60,scheduledAt:h.now()+61000});assert.notDeepEqual(json(h.writes.at(-1)),later);h.advance(62000);await h.controller.backgroundTick();assert.deepEqual(json(h.writes.at(-1)),later);}finally{h.close();}});
 test('malformed visual data is rejected without inserting or sending it',async()=>{const h=harness();try{await configured(h,true);const before=h.writes.length;const invalid=blank();invalid[3][2]=999;await assert.rejects(h.controller.mutate(user,{action:'message',grid:invalid,duration:60,scheduledAt:h.now()}),/cannot display/);assert.equal(h.writes.length,before);assert.equal(h.sql.prepare('SELECT COUNT(*) AS count FROM messages').get().count,0);}finally{h.close();}});
