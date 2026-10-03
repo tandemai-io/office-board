@@ -18,7 +18,7 @@ function harness(){
  const DB={prepare(query){const statement=sql.prepare(query);let args=[];return {bind(...values){args=values;return this;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){const r=statement.run(...args);return {meta:{changes:r.changes}};}};}};
  const env={DB,OWNER_EMAIL:user.email,SECRET_ENCRYPTION_KEY:Buffer.alloc(32,7).toString('base64')};
  let primaryUsed=0,backupUsed=0,primaryFailure=0,backupFailure=0,backupWrong=false,backupDuplicate=false,primaryStatusError=null,primaryStatusCode=200,primaryStatusRetry=0;
- let score=10,state='in_progress',failure=false,home='HOM',away='AWY';const requests=[],writes=[];
+ let score=10,state='in_progress',failure=false,home='HOM',away='AWY',possession=null,possessionFailure=false,possessionHalftime=false,possessionWrong=false;const requests=[],writes=[];
  const game=(id=101)=>({id,date:'2026-10-02',datetime:'2026-10-02T18:00:00Z',status:state==='in_progress'?'In Progress':state==='final'?'Final':state,status_state:state,period:2,time:'4:31',home_team_score:score,visitor_team_score:7,home_team:{full_name:'Test Home',abbreviation:home},visitor_team:{full_name:'Test Away',abbreviation:away}});
  const collegeId='11111111-1111-4111-8111-111111111111';
  const college=(backup=false,id=101)=>backup?{id:collegeId,sport:'american_football',league:'NCAA Football',kickoff_utc:'2026-10-02T18:00:00Z',status:state==='in_progress'?'live':state==='final'?'finished':state,home:{name:backupWrong?'Miami (OH)':'Virginia Tech'},away:{name:'Pittsburgh'},score:{home:score,away:7}}:{game:{id,date:{timestamp:Date.parse('2026-10-02T18:00:00Z')/1000},status:{short:state==='in_progress'?'Q2':state==='final'?'FT':'NS',timer:'4:31'}},teams:{home:{name:'Virginia Tech Hokies'},away:{name:'Pittsburgh Panthers'}},scores:{home:{total:score},away:{total:7}}};
@@ -34,10 +34,17 @@ function harness(){
   assert.ok(url.pathname.startsWith('/v1/matches'));assert.equal(url.searchParams.get('sport'),'american_football');
   return Response.json({data:url.pathname==='/v1/matches'?(backupDuplicate?[college(true),{...college(true),id:'99999999-1111-4111-8111-111111111111'}]:[college(true)]):college(true)},{headers:{'X-RateLimit-Remaining':'0','X-RateLimit-Limit':'100'}});
  }
+ if(url.hostname==='site.api.espn.com'){
+  if(possessionFailure)return Response.json({error:'unavailable'},{status:503});
+  if(url.pathname.endsWith('/scoreboard'))assert.match(url.searchParams.get('dates')||'',/^\d{8}$/);
+  const college=url.pathname.includes('college-football');
+  const competition={id:'401858245',date:'2026-10-02T18:00:00Z',status:{type:{state:state==='in_progress'?'in':'post',completed:state==='final',name:possessionHalftime?'STATUS_HALFTIME':'STATUS_IN_PROGRESS',description:possessionHalftime?'Halftime':'In Progress'}},competitors:[{id:'259',homeAway:'home',possession:possession==='home',team:{id:'259',displayName:possessionWrong?'Virginia Cavaliers':college?'Virginia Tech Hokies':'Test Home',abbreviation:possessionWrong?'WRONG':college?'VT':home}},{id:'221',homeAway:'away',possession:possession==='away',team:{id:'221',displayName:college?'Pittsburgh Panthers':'Test Away',abbreviation:college?'PITT':away}}]};
+  return Response.json(url.pathname.endsWith('/summary')?{header:{competitions:[competition]}}:{events:[{id:'401858245',date:competition.date,competitions:[competition]}]});
+ }
  assert.equal(url.hostname,'api.balldontlie.io');if(failure)return Response.json({error:'unavailable'},{status:503});const id=/\/games\/(\d+)$/.exec(url.pathname);return Response.json({data:id?game(Number(id[1])):url.searchParams.get('season_type')==='preseason'?[]:[game(101),game(102),game(103),game(104)],meta:{next_cursor:null}});}
  const cache={};function load(name,reload=false){if(reload)delete cache[name];if(cache[name])return cache[name];const exports={};cache[name]=exports;const code=ts.transpileModule(readFileSync(new URL(`lib/${name}.ts`,root),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;const require=specifier=>specifier==='cloudflare:workers'?{env}:specifier.startsWith('./')?load(specifier.slice(2)):realRequire(specifier);vm.runInNewContext(code,{exports,require,Date:TestDate,Intl,crypto,fetch:fetchMock,Response,URL,URLSearchParams,AbortSignal,TextEncoder,TextDecoder,Uint8Array,btoa,atob,console},{filename:name});return exports;}
  const controller=load('controller'),board=load('board'),sports=load('sports'),colors=load('team-colors');
- return {controller,board,sports,colors,sql,requests,writes,advance(ms){clock+=ms;},now(){return clock;},setScore(value){score=value;},collegeId,setPrimaryUsed(v){primaryUsed=v;},setBackupUsed(v){backupUsed=v;},primaryFail(v){primaryFailure=v;},primaryStatus(error,code=200,retry=0){primaryStatusError=error;primaryStatusCode=code;primaryStatusRetry=retry;},backupFail(v){backupFailure=v;},wrongBackup(v){backupWrong=v;},duplicateBackup(v){backupDuplicate=v;},load,setTeams(left,right){away=left;home=right;},setState(value){state=value;},fail(value){failure=value;},close(){sql.close();}};
+ return {controller,board,sports,colors,sql,requests,writes,advance(ms){clock+=ms;},now(){return clock;},setScore(value){score=value;},setPossession(value){possession=value;},possessionFail(value){possessionFailure=value;},possessionHalf(value){possessionHalftime=value;},wrongPossession(value){possessionWrong=value;},collegeId,setPrimaryUsed(v){primaryUsed=v;},setBackupUsed(v){backupUsed=v;},primaryFail(v){primaryFailure=v;},primaryStatus(error,code=200,retry=0){primaryStatusError=error;primaryStatusCode=code;primaryStatusRetry=retry;},backupFail(v){backupFailure=v;},wrongBackup(v){backupWrong=v;},duplicateBackup(v){backupDuplicate=v;},load,setTeams(left,right){away=left;home=right;},setState(value){state=value;},fail(value){failure=value;},close(){sql.close();}};
 }
 async function configured(h,hardware=false){await h.controller.getState(user);await h.controller.mutate(user,{action:'settings',settings:{quietEnabled:false,quietStart:'19:00',quietEnd:'08:00'}});if(hardware)await h.controller.mutate(user,{action:'connect',kind:'vestaboard',secret:'test-hardware-key'});}
 async function following(h,hardware=false){await configured(h,hardware);await h.controller.mutate(user,{action:'connect',kind:'sports',secret:'test-sports-key'});await h.controller.mutate(user,{action:'sports-select',league:'NFL',gameId:'101'});}
@@ -72,7 +79,7 @@ test('all NFL and NBA teams have flap colors and aliases resolve within their ow
 
 async function collegeFollowing(h,hardware=false){await configured(h,hardware);await h.controller.mutate(user,{action:'connect',kind:'api-sports',secret:'test-primary-key'});await h.controller.mutate(user,{action:'connect',kind:'big-balls',secret:'test-backup-key'});await h.controller.getSportsGames(user,'NCAAF');await h.controller.mutate(user,{action:'sports-select',league:'NCAAF',gameId:'as:101'});}
 function exhaustPrimary(h){const runtime=JSON.parse(h.sql.prepare('SELECT runtime FROM controller').get().runtime);runtime.college.usage['api-sports'].remaining=10;h.sql.prepare('UPDATE controller SET runtime=?').run(JSON.stringify(runtime));}
-test('college failover follows the same teams and clears unavailable clock while retaining team flaps',async()=>{const h=harness();try{await collegeFollowing(h,true);let state=await h.controller.getState(user);assert.equal(state.sports.game.provider,'api-sports');assert.equal(state.sports.game.clock,'4:31');const stripe=json(state.current.grid[5]);assert.deepEqual(stripe,[...Array(7).fill(67),...Array(3).fill(65),70,70,...Array(3).fill(64),...Array(7).fill(63)]);exhaustPrimary(h);h.setScore(17);h.advance(121000);await h.controller.backgroundTick();state=await h.controller.getState(user);assert.equal(state.sports.game.provider,'big-balls');assert.equal(state.sports.game.id,'as:101');assert.equal(state.sports.game.clock,null);assert.equal(state.sports.game.period,null);assert.equal(state.sports.game.home.score,17);assert.deepEqual(json(state.current.grid[5]),stripe);assert.deepEqual(json(h.writes.at(-1)[5]),stripe);assert.equal(state.current.author,'Big Balls');const apiCount=h.requests.filter(u=>u.includes('api-sports.io')).length;h.advance(121000);await h.controller.backgroundTick();assert.equal(h.requests.filter(u=>u.includes('api-sports.io')).length,apiCount);assert.ok(h.requests.at(-1).includes('/v1/matches/'+h.collegeId));}finally{h.close();}});
+test('college failover follows the same teams and clears unavailable clock while retaining team flaps',async()=>{const h=harness();try{await collegeFollowing(h,true);let state=await h.controller.getState(user);assert.equal(state.sports.game.provider,'api-sports');assert.equal(state.sports.game.clock,'4:31');const stripe=json(state.current.grid[5]);assert.deepEqual(stripe,[...Array(7).fill(67),...Array(3).fill(65),70,70,...Array(3).fill(64),...Array(7).fill(63)]);exhaustPrimary(h);h.setScore(17);h.advance(121000);await h.controller.backgroundTick();state=await h.controller.getState(user);assert.equal(state.sports.game.provider,'big-balls');assert.equal(state.sports.game.id,'as:101');assert.equal(state.sports.game.clock,null);assert.equal(state.sports.game.period,null);assert.equal(state.sports.game.home.score,17);assert.deepEqual(json(state.current.grid[5]),stripe);assert.deepEqual(json(h.writes.at(-1)[5]),stripe);assert.equal(state.current.author,'Big Balls');const apiCount=h.requests.filter(u=>u.includes('api-sports.io')).length;h.advance(121000);await h.controller.backgroundTick();assert.equal(h.requests.filter(u=>u.includes('api-sports.io')).length,apiCount);assert.ok(h.requests.filter(u=>u.includes('api.bigballsdata.com')).at(-1).includes('/v1/matches/'+h.collegeId));}finally{h.close();}});
 test('college failover refuses different or ambiguous games and retains the selected scores',async()=>{for(const kind of ['wrong','ambiguous']){const h=harness();try{await collegeFollowing(h);exhaustPrimary(h);if(kind==='wrong')h.wrongBackup(true);else h.duplicateBackup(true);h.advance(361000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.equal(state.sports.game.provider,'api-sports');assert.equal(state.sports.game.home.score,10);assert.match(state.sports.error,/uniquely match/);assert.match(state.current.text,/SCORES DELAYED/);}finally{h.close();}}});
 test('college daily reset returns to primary and exact game survives midnight',async()=>{const h=harness();try{await collegeFollowing(h);exhaustPrimary(h);h.advance(121000);await h.controller.backgroundTick();h.setPrimaryUsed(0);h.setBackupUsed(0);h.advance(86400000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.equal(state.sports.game.provider,'api-sports');assert.equal(state.config.sportsSelection.gameId,'as:101');assert.ok(h.requests.filter(u=>u.includes('/games?')&&u.includes('id=')).every(u=>u.endsWith('id=101')));}finally{h.close();}});
 test('college provider failures durably reserve quota and reject keys outside the minute-limit path',async()=>{const h=harness();try{await configured(h);h.backupFail(503);await assert.rejects(h.controller.mutate(user,{action:'connect',kind:'big-balls',secret:'test-bad-key'}),/unavailable/);const runtime=JSON.parse(h.sql.prepare('SELECT runtime FROM controller').get().runtime);assert.equal(runtime.college.usage['big-balls'].calls,1);assert.equal((await h.controller.getState(user)).connections.bigBalls,false);assert.equal(h.sql.prepare("SELECT COUNT(*) AS count FROM credentials WHERE kind='big-balls'").get().count,0);}finally{h.close();}});
@@ -81,7 +88,7 @@ test('college pause, scheduled cadence and terminal games conserve quota',async(
 test('college catalogs share one cache and disconnecting BALLDONTLIE preserves college selection',async()=>{const h=harness();try{await collegeFollowing(h);const count=h.requests.length;await h.controller.getSportsGames(user,'NCAAF');h.advance(121000);await h.controller.getSportsGames(user,'NCAAF');assert.equal(h.requests.length,count);await h.controller.mutate(user,{action:'disconnect',kind:'sports'});const state=await h.controller.getState(user);assert.equal(state.config.sportsSelection.gameId,'as:101');assert.equal(state.connections.apiSports,true);assert.equal(state.connections.bigBalls,true);}finally{h.close();}});
 test('college aliases separate Miami, USC, Louisiana and unknown schools; null scores stay absent',()=>{const h=harness();try{const api=h.load('college-api');for(const pair of [['Miami (OH)','Miami'],['USC','South Carolina'],['Louisiana','UL Monroe']])assert.notEqual(api.collegeTeam(pair[0],null).identity,api.collegeTeam(pair[1],null).identity);const game=api.normalizeCollege({id:h.collegeId,kickoff_utc:'2026-10-02T18:00:00Z',status:'live',home:{name:'Virginia Tech'},away:{name:'Pittsburgh'},score:{home:0,away:null}},'big-balls');assert.equal(game.home.score,0);assert.equal(game.away.score,null);assert.equal(game.clock,null);assert.ok(api.sameCollegeGame(game,{...game,home:api.collegeTeam('Virginia Tech Hokies',0)}));assert.equal(api.sameCollegeGame(game,{...game,home:api.collegeTeam('Virginia Cavaliers',0)}),false);}finally{h.close();}});
 
-test('both college providers near their reserves hold scores without any further paid or free requests',async()=>{const h=harness();try{await collegeFollowing(h);exhaustPrimary(h);const runtime=JSON.parse(h.sql.prepare('SELECT runtime FROM controller').get().runtime);runtime.college.usage['big-balls'].remaining=10;h.sql.prepare('UPDATE controller SET runtime=?').run(JSON.stringify(runtime));const count=h.requests.length;h.advance(361000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.equal(h.requests.length,count);assert.equal(state.sports.game.home.score,10);assert.match(state.sports.error,/free limits/);assert.match(state.current.text,/SCORES DELAYED/);}finally{h.close();}});
+test('both college providers near their reserves hold scores without any further score-provider requests',async()=>{const h=harness();try{await collegeFollowing(h);exhaustPrimary(h);const runtime=JSON.parse(h.sql.prepare('SELECT runtime FROM controller').get().runtime);runtime.college.usage['big-balls'].remaining=10;h.sql.prepare('UPDATE controller SET runtime=?').run(JSON.stringify(runtime));const scoreCalls=()=>h.requests.filter(u=>u.includes('api-sports.io')||u.includes('bigballsdata.com')).length,count=scoreCalls();h.advance(361000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.equal(scoreCalls(),count);assert.equal(state.sports.game.home.score,10);assert.match(state.sports.error,/free limits/);assert.match(state.current.text,/SCORES DELAYED/);}finally{h.close();}});
 
 
 test('minute-limited primary credentials are encrypted as pending and recover automatically without changing the selected game',async()=>{const h=harness();try{
@@ -153,5 +160,83 @@ test('terminal status text is recognized when the provider state is missing or u
    const game=h.sports.normalizeGame({...raw,status_state,status},'NFL');
    assert.equal(game.state,state);assert.equal(h.sports.isTerminalGame(game),true);
   }
+ }finally{h.close();}
+});
+
+const scoreRow=(h,state)=>state.current.grid[2].map(code=>code===69?'■':h.board.characterFor(code)).join('');
+test('NFL possession white flap switches sides next to the team names and clears on unknown or failure',async()=>{
+ const h=harness();
+ try{
+  h.setPossession('away');await following(h,true);
+  let state=await h.controller.getState(user);assert.match(scoreRow(h,state),/■AWY 7 - 10 HOM/);
+  assert.deepEqual(json(h.writes.at(-1)),json(state.current.grid));
+  const count=h.requests.length;await h.controller.mutate(user,{action:'refresh'});assert.equal(h.requests.length,count);
+  h.setPossession('home');h.advance(31000);await h.controller.backgroundTick();
+  state=await h.controller.getState(user);assert.match(scoreRow(h,state),/AWY 7 - 10 HOM■/);
+  h.setPossession(null);h.advance(31000);await h.controller.backgroundTick();assert.doesNotMatch(scoreRow(h,await h.controller.getState(user)),/■/);
+  h.setPossession('away');h.advance(31000);await h.controller.backgroundTick();
+  h.possessionFail(true);h.advance(31000);await h.controller.backgroundTick();state=await h.controller.getState(user);
+  assert.doesNotMatch(scoreRow(h,state),/■/);assert.equal(state.sports.error,null);assert.equal(state.sports.game.home.score,10);
+ }finally{h.close();}
+});
+test('college possession updates every thirty seconds without spending extra college score quota',async()=>{
+ const h=harness();
+ try{
+  h.setPossession('away');await collegeFollowing(h,true);
+  let state=await h.controller.getState(user);assert.match(scoreRow(h,state),/■PITT 7 - 10 VT/);
+  const scoreCalls=h.requests.filter(u=>u.includes('api-sports.io')||u.includes('bigballsdata.com')).length;
+  h.setPossession('home');h.advance(31000);await h.controller.backgroundTick();
+  state=await h.controller.getState(user);assert.match(scoreRow(h,state),/PITT 7 - 10 VT■/);
+  assert.equal(h.requests.filter(u=>u.includes('api-sports.io')||u.includes('bigballsdata.com')).length,scoreCalls);
+  h.possessionHalf(true);h.advance(31000);await h.controller.backgroundTick();assert.doesNotMatch(scoreRow(h,await h.controller.getState(user)),/■/);
+  h.possessionHalf(false);h.wrongPossession(true);h.advance(31000);await h.controller.backgroundTick();assert.doesNotMatch(scoreRow(h,await h.controller.getState(user)),/■/);
+  await h.controller.mutate(user,{action:'pause',paused:true});const requests=h.requests.length;h.advance(31000);await h.controller.backgroundTick();assert.equal(h.requests.length,requests);
+ }finally{h.close();}
+});
+test('possession is never guessed from a last play and rejects mismatched, ambiguous or terminal data',()=>{
+ const h=harness();
+ try{
+  const raw={id:101,datetime:'2026-10-02T18:00:00Z',status_state:'in_progress',home_team_score:10,visitor_team_score:7,home_team:{abbreviation:'HOM'},visitor_team:{abbreviation:'AWY'}};
+  const game=h.sports.normalizeGame(raw,'NFL'),possession=h.load('football-possession');
+  const c={date:game.startsAt,status:{type:{state:'in',completed:false}},competitors:[{id:'1',homeAway:'home',possession:true,team:{abbreviation:'HOM'}},{id:'2',homeAway:'away',possession:false,team:{abbreviation:'AWY'}}]};
+  assert.equal(possession.possessionFromCompetition(game,c),'home');
+  assert.equal(possession.possessionFromCompetition(game,{...c,date:'2026-10-03T18:00:00Z'}),null);
+  assert.equal(possession.possessionFromCompetition(game,{...c,status:{type:{state:'post',completed:true}}}),null);
+  assert.equal(possession.possessionFromCompetition(game,{...c,competitors:c.competitors.map(t=>({...t,possession:true}))}),null);
+  assert.equal(possession.possessionFromCompetition(game,{...c,situation:{possession:'2'}}),null);
+  assert.equal(possession.possessionFromCompetition(game,{...c,competitors:c.competitors.map(t=>({...t,possession:false})),situation:{lastPlay:{team:{id:'1'}}}}),null);
+  for(const side of ['home','away']){
+   const marked={...game,possession:side,possessionUpdatedAt:h.now()};
+   assert.equal(h.sports.gameScene(marked).grid[2].filter(code=>code===69).length,1);
+   assert.equal(h.sports.gameScene(marked,true).grid[2].filter(code=>code===69).length,0);
+   assert.equal(h.sports.gameScene({...marked,state:'final'}).grid[2].filter(code=>code===69).length,0);
+   assert.equal(h.sports.gameScene({...marked,status:'Halftime'}).grid[2].filter(code=>code===69).length,0);
+   assert.equal(h.sports.gameScene({...marked,league:'NBA'}).grid[2].filter(code=>code===69).length,0);
+   assert.equal(h.sports.gameScene({...marked,possessionUpdatedAt:h.now()-91000}).grid[2].filter(code=>code===69).length,0);
+   const wide={...marked,home:{...game.home,abbreviation:'ABCDE',score:999},away:{...game.away,abbreviation:'FGHIJ',score:999}};
+   assert.equal(h.sports.gameScene(wide).grid[2].length,22);
+   assert.equal(h.sports.gameScene(wide).grid[2].filter(code=>code===69).length,1);
+  }
+ }finally{h.close();}
+});
+
+test('a score-feed halftime clears possession even when ESPN still reports a live team',async()=>{
+ const h=harness();
+ try{
+  const api=h.load('football-possession'),cache=api.newPossessionCache();
+  cache.team='home';cache.updatedAt=h.now();
+  const game={id:'101',league:'NFL',state:'in_progress',status:'Halftime',possession:'home',possessionUpdatedAt:h.now()};
+  const count=h.requests.length,result=await api.updateFootballPossession(game,cache,h.now());
+  assert.equal(result.possession,null);assert.equal(cache.team,null);assert.equal(h.requests.length,count);
+ }finally{h.close();}
+});
+
+test('possession discovery uses the Eastern game date for an evening kickoff after UTC midnight',async()=>{
+ const h=harness();
+ try{
+  const api=h.load('football-possession');
+  const game=h.sports.normalizeGame({id:101,datetime:'2026-10-03T01:00:00Z',status_state:'in_progress',home_team:{abbreviation:'HOM'},visitor_team:{abbreviation:'AWY'}},'NFL');
+  await api.updateFootballPossession(game,api.newPossessionCache(),h.now());
+  const url=new URL(h.requests[0]);assert.equal(url.searchParams.get('dates'),'20261002');
  }finally{h.close();}
 });

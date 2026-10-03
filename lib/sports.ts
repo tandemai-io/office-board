@@ -4,7 +4,9 @@ export type SportsLeague = 'NFL' | 'NBA' | 'NCAAF';
 export type GameState = 'scheduled' | 'in_progress' | 'final' | 'postponed' | 'canceled' | 'delayed' | 'suspended' | 'abandoned' | 'unknown';
 export type SportsSelection = {league:SportsLeague;gameId:string};
 export type SportsTeam = {name:string;abbreviation:string;score:number|null;identity?:string;colors?:[number,number]};
-export type SportsGame = {id:string;league:SportsLeague;startsAt:string|null;date:string;state:GameState;status:string;period:number|null;clock:string|null;home:SportsTeam;away:SportsTeam;preseason:boolean;provider?:'api-sports'|'big-balls'};
+export type SportsGame = {id:string;league:SportsLeague;startsAt:string|null;date:string;state:GameState;status:string;period:number|null;clock:string|null;home:SportsTeam;away:SportsTeam;preseason:boolean;provider?:'api-sports'|'big-balls';possession?:'home'|'away'|null;possessionUpdatedAt?:number|null};
+export const POSSESSION_STALE_MS=90000;
+export const canShowPossession=(game:SportsGame)=>game.league!=='NBA'&&game.state==='in_progress'&&!/halftime|intermission|end.of/i.test(game.status);
 export type GamesResult = {league:SportsLeague;games:SportsGame[];fetchedAt:number|null;connected:boolean;error:string|null;provider?:string|null};
 export type ProviderGame = {id:number|string;date?:string;datetime?:string|null;status?:string;status_state?:string;period?:number;time?:string;postponed?:boolean;season_type?:string|number;home_team_score?:number|null;visitor_team_score?:number|null;home_team?:{full_name?:string;name?:string;abbreviation?:string};visitor_team?:{full_name?:string;name?:string;abbreviation?:string}};
 const STATES:GameState[]=['scheduled','in_progress','final','postponed','canceled','delayed','suspended','abandoned','unknown'];
@@ -35,8 +37,14 @@ export function gameScene(game:SportsGame,stale=false,timeZone='America/Los_Ange
  const label=stale?'SCORES DELAYED':live?'LIVE':game.state==='final'?'FINAL':game.state==='scheduled'?'UPCOMING':game.state.toUpperCase();
  const points=(score:number|null)=>score===null?'--':String(score);
  const detail=gameStatus(game,timeZone).toUpperCase().replace(/[^A-Z0-9 :/.,'-]/g,'').slice(0,22);
- const scene={text:`${game.league} ${label}\n\n${game.away.abbreviation} ${points(game.away.score)} - ${points(game.home.score)} ${game.home.abbreviation}\n\n${detail}`,alignment:'center' as const,accent:67};
- const grid=formatBoard(scene.text,scene.alignment,scene.accent);
+ const scoreRow=`${game.away.abbreviation} ${points(game.away.score)} - ${points(game.home.score)} ${game.home.abbreviation}`;
+ const scene={text:`${game.league} ${label}\n\n${scoreRow}\n\n${detail}`,alignment:'center' as const,accent:67};
+ const possession=canShowPossession(game)&&!stale&&game.possessionUpdatedAt&&Date.now()-game.possessionUpdatedAt<POSSESSION_STALE_MS?game.possession:null;
+ // Reserve one cell outside the possessing team's abbreviation, then use a
+ // physical White flap (69) in that cell without changing the score text.
+ const markedRow=`${possession==='away'?'@':''}${scoreRow}${possession==='home'?'@':''}`;
+ const grid=formatBoard(scene.text.replace(scoreRow,markedRow),scene.alignment,scene.accent);
+ const marker=grid[2].indexOf(38);if(marker!==-1)grid[2][marker]=69;
  grid[5]=teamColorStrip(game.league,game.away.abbreviation,game.home.abbreviation,game.away.colors,game.home.colors);
  return {...scene,grid};
 }

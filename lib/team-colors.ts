@@ -35,10 +35,13 @@ const ALIASES: Record<Exclude<SportsLeague,'NCAAF'>, Record<string, string>> = {
   NBA: { GS: 'GSW', NO: 'NOP', NY: 'NYK', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS', PHO: 'PHX' },
 };
 
+export function canonicalTeamAbbreviation(league:SportsLeague,abbreviation:string):string {
+  const key = abbreviation.trim().toUpperCase();
+  return league==='NCAAF'?key:ALIASES[league][key]||key;
+}
 export function teamColors(league: SportsLeague, abbreviation: string): TeamColors {
   if(league==='NCAAF')return [69,70];
-  const key = abbreviation.trim().toUpperCase();
-  return TEAM_COLORS[league][ALIASES[league][key] || key] || [69, 70];
+  return TEAM_COLORS[league][canonicalTeamAbbreviation(league,abbreviation)] || [69, 70];
 }
 
 export function teamColorStrip(league: SportsLeague, leftTeam: string, rightTeam: string, leftColors?:TeamColors, rightColors?:TeamColors): number[] {
