@@ -18,12 +18,12 @@ function harness(){
  const DB={prepare(query){const statement=sql.prepare(query);let args=[];return {bind(...values){args=values;return this;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){const r=statement.run(...args);return {meta:{changes:r.changes}};}};}};
  const env={DB,OWNER_EMAIL:user.email,SECRET_ENCRYPTION_KEY:Buffer.alloc(32,7).toString('base64')};
  let primaryUsed=0,backupUsed=0,primaryFailure=0,backupFailure=0,backupWrong=false,backupDuplicate=false,primaryStatusError=null,primaryStatusCode=200,primaryStatusRetry=0;
- let hardwareFailure=false;
+ let hardwareFailure=false,hardwareQuiet=false,hardwareStatus="ok",hardwareStale=false,cloudGrid=blank();const hardwareBodies=[];
  let score=10,state='in_progress',failure=false,home='HOM',away='AWY',possession=null,possessionFailure=false,possessionHalftime=false,possessionWrong=false;const requests=[],writes=[];
  const game=(id=101)=>({id,date:'2026-10-02',datetime:'2026-10-02T18:00:00Z',status:state==='in_progress'?'In Progress':state==='final'?'Final':state,status_state:state,period:2,time:'4:31',home_team_score:score,visitor_team_score:7,home_team:{full_name:'Test Home',abbreviation:home},visitor_team:{full_name:'Test Away',abbreviation:away}});
  const collegeId='11111111-1111-4111-8111-111111111111';
  const college=(backup=false,id=101)=>backup?{id:collegeId,sport:'american_football',league:'NCAA Football',kickoff_utc:'2026-10-02T18:00:00Z',status:state==='in_progress'?'live':state==='final'?'finished':state,home:{name:backupWrong?'Miami (OH)':'Virginia Tech'},away:{name:'Pittsburgh'},score:{home:score,away:7}}:{game:{id,date:{timestamp:Date.parse('2026-10-02T18:00:00Z')/1000},status:{short:state==='in_progress'?'Q2':state==='final'?'FT':'NS',timer:'4:31'}},teams:{home:{name:'Virginia Tech Hokies'},away:{name:'Pittsburgh Panthers'}},scores:{home:{total:score},away:{total:7}}};
- async function fetchMock(input,options={}){const url=new URL(String(input));requests.push(url.href);if(url.hostname==='cloud.vestaboard.com'){if(options.method==='POST'){if(hardwareFailure)return Response.json({error:'unavailable'},{status:503});writes.push(JSON.parse(options.body).characters);};return Response.json({ok:true});}if(url.hostname==='v1.american-football.api-sports.io'){
+ async function fetchMock(input,options={}){const url=new URL(String(input));requests.push(url.href);if(url.hostname==='cloud.vestaboard.com'){if(options.method==='POST'){const body=JSON.parse(options.body);hardwareBodies.push(body);if(hardwareFailure)return Response.json({error:'unavailable'},{status:503});if(hardwareStatus!=='ok')return Response.json({status:hardwareStatus});writes.push(body.characters);if(!hardwareStale&&(!hardwareQuiet||body.forced===true))cloudGrid=json(body.characters);return Response.json({status:'ok',id:'test-message',created:clock});}return Response.json({currentMessage:{layout:JSON.stringify(cloudGrid),id:'test-message'}});}if(url.hostname==='v1.american-football.api-sports.io'){
   if(url.pathname==='/status')return primaryStatusError?Response.json({errors:typeof primaryStatusError==='string'?{rateLimit:primaryStatusError}:primaryStatusError},{status:primaryStatusCode,headers:primaryStatusRetry?{'Retry-After':String(primaryStatusRetry)}:{}}):Response.json({response:{subscription:{active:true},requests:{current:primaryUsed,limit_day:100}},errors:[]});
   primaryUsed++;if(primaryFailure)return Response.json({errors:{problem:'provider error with test-key'}},{status:primaryFailure});
   if(url.pathname==='/leagues')return Response.json({response:[{league:{id:2},seasons:[{year:2026,current:true}]}],errors:[]});
@@ -45,10 +45,38 @@ function harness(){
  assert.equal(url.hostname,'api.balldontlie.io');if(failure)return Response.json({error:'unavailable'},{status:503});const id=/\/games\/(\d+)$/.exec(url.pathname);return Response.json({data:id?game(Number(id[1])):url.searchParams.get('season_type')==='preseason'?[]:[game(101),game(102),game(103),game(104)],meta:{next_cursor:null}});}
  const cache={};function load(name,reload=false){if(reload)delete cache[name];if(cache[name])return cache[name];const exports={};cache[name]=exports;const code=ts.transpileModule(readFileSync(new URL(`lib/${name}.ts`,root),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;const require=specifier=>specifier==='cloudflare:workers'?{env}:specifier.startsWith('./')?load(specifier.slice(2)):realRequire(specifier);vm.runInNewContext(code,{exports,require,Date:TestDate,Intl,crypto,fetch:fetchMock,Response,URL,URLSearchParams,AbortSignal,TextEncoder,TextDecoder,Uint8Array,btoa,atob,console},{filename:name});return exports;}
  const controller=load('controller'),board=load('board'),sports=load('sports'),colors=load('team-colors');
- return {controller,board,sports,colors,sql,requests,writes,advance(ms){clock+=ms;},now(){return clock;},setScore(value){score=value;},hardwareFail(value){hardwareFailure=value;},setPossession(value){possession=value;},possessionFail(value){possessionFailure=value;},possessionHalf(value){possessionHalftime=value;},wrongPossession(value){possessionWrong=value;},collegeId,setPrimaryUsed(v){primaryUsed=v;},setBackupUsed(v){backupUsed=v;},primaryFail(v){primaryFailure=v;},primaryStatus(error,code=200,retry=0){primaryStatusError=error;primaryStatusCode=code;primaryStatusRetry=retry;},backupFail(v){backupFailure=v;},wrongBackup(v){backupWrong=v;},duplicateBackup(v){backupDuplicate=v;},load,setTeams(left,right){away=left;home=right;},setState(value){state=value;},fail(value){failure=value;},close(){sql.close();}};
+ return {controller,board,sports,colors,sql,requests,writes,hardwareBodies,hardwareQuiet(value){hardwareQuiet=value;},hardwareStatus(value){hardwareStatus=value;},hardwareStale(value){hardwareStale=value;},cloudGrid(value){cloudGrid=json(value);},advance(ms){clock+=ms;},now(){return clock;},setScore(value){score=value;},hardwareFail(value){hardwareFailure=value;},setPossession(value){possession=value;},possessionFail(value){possessionFailure=value;},possessionHalf(value){possessionHalftime=value;},wrongPossession(value){possessionWrong=value;},collegeId,setPrimaryUsed(v){primaryUsed=v;},setBackupUsed(v){backupUsed=v;},primaryFail(v){primaryFailure=v;},primaryStatus(error,code=200,retry=0){primaryStatusError=error;primaryStatusCode=code;primaryStatusRetry=retry;},backupFail(v){backupFailure=v;},wrongBackup(v){backupWrong=v;},duplicateBackup(v){backupDuplicate=v;},load,setTeams(left,right){away=left;home=right;},setState(value){state=value;},fail(value){failure=value;},close(){sql.close();}};
 }
 async function configured(h,hardware=false){await h.controller.getState(user);await h.controller.mutate(user,{action:'settings',settings:{quietEnabled:false,quietStart:'19:00',quietEnd:'08:00'}});if(hardware)await h.controller.mutate(user,{action:'connect',kind:'vestaboard',secret:'test-hardware-key'});}
 async function following(h,hardware=false){await configured(h,hardware);await h.controller.mutate(user,{action:'connect',kind:'sports',secret:'test-sports-key'});await h.controller.mutate(user,{action:'sports-select',league:'NFL',gameId:'101'});}
+
+test('every message overrides native Vestaboard quiet hours and cloud readback matches the sent frame',async()=>{
+ const h=harness();try{
+  h.hardwareQuiet(true);await following(h,true);let state=await h.controller.getState(user);
+  assert.equal(h.hardwareBodies.at(-1).forced,true);assert.equal(state.controller.hardware.matches,true);assert.deepEqual(json(h.hardwareBodies.at(-1).characters),json(state.current.grid));
+  h.advance(31000);await h.controller.mutate(user,{action:'message',text:'TEAM NOTE',duration:60,scheduledAt:h.now()});assert.equal(h.hardwareBodies.at(-1).forced,true);assert.equal((await h.controller.getState(user)).controller.hardware.matches,true);
+ }finally{h.close();}
+});
+test('an old unforced accepted sports frame is resent once with the quiet-hours override',async()=>{
+ const h=harness();try{
+  await following(h,true);const row=h.sql.prepare('SELECT runtime FROM controller').get();const runtime=JSON.parse(row.runtime);delete runtime.lastForced;delete runtime.hardware;
+  h.sql.prepare('UPDATE controller SET runtime=?').run(JSON.stringify(runtime));const before=h.writes.length;h.advance(31000);await h.load('controller',true).backgroundTick();assert.equal(h.writes.length,before+1);assert.equal(h.hardwareBodies.at(-1).forced,true);
+  h.advance(31000);await h.controller.backgroundTick();assert.equal(h.writes.length,before+1);
+ }finally{h.close();}
+});
+test('HTTP success without Vestaboard status ok never advances the accepted display',async()=>{
+ const h=harness();try{
+  await following(h,true);const before=await h.controller.getState(user);h.hardwareStatus('error');h.setScore(24);h.advance(31000);await h.controller.backgroundTick();const state=await h.controller.getState(user);
+  assert.deepEqual(json(state.current.grid),json(before.current.grid));assert.equal(state.controller.lastAccepted,before.controller.lastAccepted);assert.match(state.controller.error,/did not confirm/);
+ }finally{h.close();}
+});
+test('owner readback distinguishes a different cloud layout and never writes or exposes credentials',async()=>{
+ const h=harness();try{
+  await following(h,true);h.hardwareStale(true);h.setScore(24);h.advance(31000);await h.controller.backgroundTick();let state=await h.controller.getState(user);assert.equal(state.controller.hardware.matches,false);
+  const writes=h.writes.length,scoreCalls=h.requests.filter(u=>!u.includes('cloud.vestaboard.com')).length;h.cloudGrid(state.current.grid);state=await h.controller.mutate(user,{action:'hardware-check'});assert.equal(state.controller.hardware.matches,true);assert.equal(h.writes.length,writes);assert.equal(h.requests.filter(u=>!u.includes('cloud.vestaboard.com')).length,scoreCalls);assert.ok(!JSON.stringify(state).includes('test-hardware-key'));
+  await assert.rejects(h.controller.mutate({...user,userId:'teammate',email:'team@example.test'},{action:'hardware-check'}),/Only the dashboard owner/);
+ }finally{h.close();}
+});
 
 test('visual cells survive storage, state reload, scheduling and hardware delivery exactly',async()=>{const h=harness();try{await configured(h,true);const grid=blank();grid[0][0]=69;grid[0][21]=70;grid[4][7]=1;grid[5]=Array(22).fill(63);const sent=await h.controller.mutate(user,{action:'message',grid,duration:60,scheduledAt:h.now()});assert.deepEqual(json(sent.current.grid),grid);assert.deepEqual(json(h.writes.at(-1)),grid);assert.deepEqual(json((await h.controller.getState(user)).messages[0].grid),grid);h.advance(61000);const later=blank();later[2][10]=67;await h.controller.mutate(user,{action:'message',grid:later,duration:60,scheduledAt:h.now()+61000});assert.notDeepEqual(json(h.writes.at(-1)),later);h.advance(62000);await h.controller.backgroundTick();assert.deepEqual(json(h.writes.at(-1)),later);}finally{h.close();}});
 test('malformed visual data is rejected without inserting or sending it',async()=>{const h=harness();try{await configured(h,true);const before=h.writes.length;const invalid=blank();invalid[3][2]=999;await assert.rejects(h.controller.mutate(user,{action:'message',grid:invalid,duration:60,scheduledAt:h.now()}),/cannot display/);assert.equal(h.writes.length,before);assert.equal(h.sql.prepare('SELECT COUNT(*) AS count FROM messages').get().count,0);}finally{h.close();}});
@@ -80,32 +108,16 @@ test('all NFL and NBA teams have flap colors and aliases resolve within their ow
 
 async function collegeFollowing(h,hardware=false){await configured(h,hardware);await h.controller.mutate(user,{action:'connect',kind:'api-sports',secret:'test-primary-key'});await h.controller.mutate(user,{action:'connect',kind:'big-balls',secret:'test-backup-key'});await h.controller.getSportsGames(user,'NCAAF');await h.controller.mutate(user,{action:'sports-select',league:'NCAAF',gameId:'as:101'});}
 
-for(const feed of ['NFL','NBA','api-sports','big-balls']){
- test(`${feed} delivers scores and Final through quiet hours while team notes wait`,async()=>{
-  const h=harness();try{
-   const college=feed==='api-sports'||feed==='big-balls';
-   if(college){await collegeFollowing(h,true);if(feed==='big-balls')exhaustPrimary(h);}
-   else{await following(h,true);if(feed==='NBA'){await h.controller.getSportsGames(user,'NBA');await h.controller.mutate(user,{action:'sports-select',league:'NBA',gameId:'101'});}}
-   await h.controller.mutate(user,{action:'settings',settings:{quietEnabled:true,quietStart:'19:00',quietEnd:'08:00'}});
-   h.advance(8*3600000+121000);h.setScore(33);h.setPossession('home');
-   await h.controller.backgroundTick();let state=await h.controller.getState(user);
-   assert.equal(state.controller.pausedByQuietHours,false);assert.equal(state.controller.sportsDuringQuietHours,true);
-   assert.equal(state.sports.game.home.score,33);assert.match(state.current.text,/33/);
-   assert.deepEqual(json(h.writes.at(-1)),json(state.current.grid));
-   const displayed=json(state.current.grid),writes=h.writes.length;
-   await h.controller.mutate(user,{action:'message',text:'TEAM NOTE',duration:60,scheduledAt:h.now()});
-   state=await h.controller.getState(user);assert.equal(state.messages[0].status,'queued');assert.deepEqual(json(state.current.grid),displayed);assert.equal(h.writes.length,writes);
-   await h.controller.mutate(user,{action:'pause',paused:true});h.advance(121000);h.setScore(40);await h.controller.backgroundTick();assert.equal(h.writes.length,writes);
-   await h.controller.mutate(user,{action:'pause',paused:false});
-   h.advance(121000);h.setScore(42);h.setState('final');await h.controller.backgroundTick();state=await h.controller.getState(user);
-   assert.equal(state.sports.game.state,'final');assert.equal(state.sports.game.home.score,42);assert.match(state.current.text,/FINAL/);assert.match(state.current.text,/42/);assert.deepEqual(json(h.writes.at(-1)),json(state.current.grid));
-   const calls=h.requests.length,finalWrites=h.writes.length;h.advance(3600000);await h.load('controller',true).backgroundTick();assert.equal(h.requests.length,calls);assert.equal(h.writes.length,finalWrites);
-   await h.controller.mutate(user,{action:'sports-stop'});state=await h.controller.getState(user);assert.equal(state.controller.pausedByQuietHours,true);assert.equal(state.controller.sportsDuringQuietHours,false);assert.equal(state.messages[0].status,'queued');assert.equal(h.writes.length,finalWrites);
-   h.advance(12*3600000);await h.controller.backgroundTick();state=await h.controller.getState(user);assert.equal(state.messages[0].status,'accepted');assert.equal(state.current.text,'TEAM NOTE');
-  }finally{h.close();}
- });
-}
-test('a final write that fails during quiet hours retries without polling the finished game',async()=>{
+test('legacy quiet settings cannot stop evening score updates or team messages',async()=>{
+ const h=harness();try{
+  await collegeFollowing(h,true);const config=JSON.parse(h.sql.prepare('SELECT config FROM controller').get().config);config.quietEnabled=true;config.quietStart='19:00';config.quietEnd='08:00';h.sql.prepare('UPDATE controller SET config=?').run(JSON.stringify(config));
+  h.advance(8*3600000+121000);h.setScore(33);await h.controller.backgroundTick();let state=await h.controller.getState(user);
+  assert.equal(state.config.quietEnabled,false);assert.equal(state.controller.pausedByQuietHours,false);assert.equal(state.controller.sportsDuringQuietHours,false);assert.match(state.current.text,/33/);assert.equal(JSON.parse(h.sql.prepare('SELECT config FROM controller').get().config).quietEnabled,false);
+  h.advance(31000);state=await h.controller.mutate(user,{action:'message',text:'EVENING NOTE',duration:60,scheduledAt:h.now()});assert.equal(state.current.text,'EVENING NOTE');assert.equal(state.messages[0].status,'accepted');assert.equal(h.hardwareBodies.at(-1).forced,true);
+ }finally{h.close();}
+});
+
+test('a failed final write retries without polling the finished game',async()=>{
  const h=harness();try{
   await collegeFollowing(h,true);await h.controller.mutate(user,{action:'settings',settings:{quietEnabled:true,quietStart:'19:00',quietEnd:'08:00'}});
   h.advance(8*3600000+121000);h.setState('final');h.setScore(42);h.hardwareFail(true);const writes=h.writes.length;
