@@ -45,7 +45,8 @@ export function teamColorStrip(league: SportsLeague, leftTeam: string, rightTeam
   const [leftPrimary, leftSecondary] = leftColors || teamColors(league, leftTeam);
   const [rightPrimary, rightSecondary] = rightColors || teamColors(league, rightTeam);
   return [
-    ...Array<number>(8).fill(leftPrimary), ...Array<number>(3).fill(leftSecondary),
-    ...Array<number>(3).fill(rightSecondary), ...Array<number>(8).fill(rightPrimary),
+    ...Array<number>(7).fill(leftPrimary), ...Array<number>(3).fill(leftSecondary),
+    70, 70,
+    ...Array<number>(3).fill(rightSecondary), ...Array<number>(7).fill(rightPrimary),
   ];
 }
