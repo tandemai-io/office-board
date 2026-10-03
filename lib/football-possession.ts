@@ -30,11 +30,11 @@ export function possessionFromCompetition(game:SportsGame,c:Competition):'home'|
  const team=flagged[0]||identified[0];
  return team?.homeAway==='home'||team?.homeAway==='away'?team.homeAway:null;
 }
-async function read(url:string):Promise<Feed>{const response=await fetch(url,{signal:AbortSignal.timeout(4000),headers:{Accept:'application/json'}});if(!response.ok)throw new Error('Possession unavailable.');return await response.json() as Feed;}
+async function read(url:string):Promise<Feed>{const response=await fetch(url,{signal:AbortSignal.timeout(4000),headers:{Accept:'application/json'}});if(!response.ok)throw new Error(`ESPN possession HTTP ${response.status}.`);return await response.json() as Feed;}
 export async function updateFootballPossession(game:SportsGame,cache:PossessionCache,time=Date.now()):Promise<SportsGame>{
  const snapshot=()=>({...game,possession:cache.updatedAt&&time-cache.updatedAt<POSSESSION_STALE_MS?cache.team:null,possessionUpdatedAt:cache.updatedAt});
  if(!canShowPossession(game)){cache.team=null;cache.updatedAt=null;return snapshot();}
- const key=`${game.league}:${game.id}:${game.startsAt}`;
+ const key=`espn-summary-v1:${game.league}:${game.id}:${game.startsAt}`;
  if(cache.key!==key)Object.assign(cache,newPossessionCache(),{key});
  if(cache.attemptedAt&&time-cache.attemptedAt<REFRESH_MS)return snapshot();
  cache.attemptedAt=time;cache.team=null;cache.updatedAt=null;
@@ -50,7 +50,7 @@ export async function updateFootballPossession(game:SportsGame,cache:PossessionC
    const data=await read(`${base}/scoreboard?dates=${day}&limit=1000${game.league==='NCAAF'?'&groups=80':''}`);
    const events=Array.isArray(data.events)?data.events:[];
    const found=events.filter((e:{id?:string;date?:string;competitions?:Competition[]})=>/^\d{1,18}$/.test(e.id||'')&&(e.competitions||[]).some(c=>matches(game,c,e.date)));
-   if(found.length!==1)return snapshot();
+   if(found.length!==1)throw new Error('No unique ESPN possession matchup.');
    cache.eventId=String(found[0].id);
   }
   // The summary exposes explicit competitor.possession booleans. Scores still
@@ -60,6 +60,10 @@ export async function updateFootballPossession(game:SportsGame,cache:PossessionC
   const found=competitions.filter((c:Competition)=>String(c.id)===cache.eventId&&matches(game,c));
   if(found.length!==1){cache.eventId=null;return snapshot();}
   cache.team=possessionFromCompetition(game,found[0]);cache.updatedAt=cache.team?time:null;
- }catch{/* Possession is optional: clear the marker without interrupting scores. */}
+ }catch(error){
+  // Safe operational context helps diagnose a missing marker; no credentials
+  // or raw provider responses are logged. Score delivery remains independent.
+  console.warn('Football possession unavailable',JSON.stringify({league:game.league,home:game.home.abbreviation,away:game.away.abbreviation,kickoff:game.startsAt,eventId:cache.eventId,error:error instanceof Error?error.message:'Unreadable possession data.'}));
+ }
  return snapshot();
 }
