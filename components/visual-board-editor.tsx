@@ -3,11 +3,12 @@ import {useRef,useState,type KeyboardEvent} from 'react';
 import {Paintbrush,PaintBucket,Wand2,Type,Eraser,Undo2,Redo2,Trash2,ArrowUp,ArrowDown,ArrowLeft,ArrowRight} from 'lucide-react';
 import {characterCode,characterFor,COLORS,validateGrid} from '@/lib/board';
 import {toast} from 'sonner';
+import ImageToBoard from './image-to-board';
 type Tool='brush'|'bucket'|'select'|'text'|'eraser';
 const clone=(grid:number[][])=>grid.map(row=>[...row]);
 export const EDITOR_COLORS=[69,63,64,65,66,67,68,70];
 export function bitColor(code:number){return code===71?(COLORS.find(c=>c.code===69)?.hex||'#ffffff'):COLORS.find(c=>c.code===code)?.hex;}
-export default function VisualBoardEditor({value,onChange}:{value:number[][];onChange:(grid:number[][])=>void}){
+export default function VisualBoardEditor({value,onChange,imageOpen=false,onImageOpenChange=()=>{}}:{value:number[][];onChange:(grid:number[][])=>void;imageOpen?:boolean;onImageOpenChange?:(open:boolean)=>void}){
  const [tool,setTool]=useState<Tool>('brush'),[color,setColor]=useState(69),[size,setSize]=useState(1),[cursor,setCursor]=useState(0),[history,setHistory]=useState<number[][][]>([]),[future,setFuture]=useState<number[][][]>([]);
  const current=useRef(value);current.current=value;
  const [selection,setSelection]=useState<number[]>([]);
@@ -28,7 +29,7 @@ export default function VisualBoardEditor({value,onChange}:{value:number[][];onC
  function keyboard(e:KeyboardEvent){const movement:{[key:string]:number}={ArrowLeft:-1,ArrowRight:1,ArrowUp:-22,ArrowDown:22};if(e.key in movement){e.preventDefault();setCursor(v=>Math.max(0,Math.min(131,v+movement[e.key])));}else if(e.key==='Backspace'||e.key==='Delete'){e.preventDefault();const at=e.key==='Backspace'?Math.max(0,cursor-1):cursor;const grid=clone(current.current);grid[Math.floor(at/22)][at%22]=0;update(grid);setCursor(at);}else if(e.key==='Enter'){e.preventDefault();setCursor(Math.min(131,(Math.floor(cursor/22)+1)*22));}}
  function undo(){if(!history.length)return;const previous=history[history.length-1];setFuture(f=>[clone(current.current),...f]);setHistory(h=>h.slice(0,-1));current.current=previous;onChange(clone(previous));}
  function redo(){if(!future.length)return;const next=future[0];setHistory(h=>[...h,clone(current.current)]);setFuture(f=>f.slice(1));current.current=next;onChange(clone(next));}
- return <div className="visual-editor">
+ return <div className="visual-editor"><ImageToBoard open={imageOpen} onOpenChange={onImageOpenChange} onApply={grid=>{update(grid);setSelection([]);}}/>
   <div className="visual-palette" role="group" aria-label="Vestaboard colors">{EDITOR_COLORS.map(code=>{const name=code===70?'Black':COLORS.find(c=>c.code===code)!.name;return <button type="button" key={code} aria-label={`Paint ${name}`} aria-pressed={color===code} className={`paint-color ${color===code?'chosen':''}`} style={{background:bitColor(code),...(code===69?{borderColor:"#111111"}:{})}} onClick={()=>recolor(code)}><span className="sr-only">{name}</span></button>;})}</div>
   <div className="board-frame editable-frame" onPointerUp={()=>{stroke.current=false;}} onPointerCancel={()=>{stroke.current=false;}} onPointerLeave={()=>{stroke.current=false;}}>
    <div className="flap-grid editable-grid" role="grid" aria-label="Visual board editor, 6 rows by 22 columns">{value.map((row,r)=>row.map((code,c)=><button type="button" role="gridcell" aria-label={`Row ${r+1} column ${c+1}, ${code>=63?(code===70?'Black':code===71?'White':COLORS.find(x=>x.code===code)?.name):characterFor(code).trim()||'blank'}`} aria-selected={(tool==='text'&&cursor===r*22+c)||(tool==='select'&&selection.includes(r*22+c))} className={`flap ${code>=63?'color-flap':''} ${(tool==='text'&&cursor===r*22+c)||(tool==='select'&&selection.includes(r*22+c))?'cell-cursor':''}`} style={code>=63?{background:bitColor(code),color:'transparent'}:undefined} key={`${r}-${c}`} onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();stroke.current=true;strokeRecorded.current=false;selectionStart.current=r*22+c;apply(r,c,true);}} onPointerEnter={()=>{if(stroke.current&&(tool==='brush'||tool==='eraser'))apply(r,c,false);else if(stroke.current&&tool==='select')selectRectangle(r,c);}} onClick={e=>{if(e.detail===0)apply(r,c,true);}}><span>{characterFor(code)}</span></button>))}</div>

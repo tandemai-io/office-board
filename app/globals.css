@@ -16,6 +16,23 @@
 @media(max-width:450px){.app-header{padding-left:18px;padding-right:18px}.brand-logo-wordmark{width:112px}.brand-logo-symbol{width:28px}.wordmark{gap:10px}.header-right{gap:8px}}
 /* Sports selection and the exact-cell Vestaboard editor. */
 .compose-tabs,.sports-leagues{display:flex;align-items:center;gap:.4rem;margin:1rem 0;}
+.image-dialog{width:min(880px,calc(100vw - 2rem))!important;max-width:880px!important;max-height:90vh;overflow-y:auto;}
+.image-drop{display:flex;align-items:center;gap:1rem;width:100%;padding:1.25rem;border:1px dashed var(--border);border-radius:.65rem;background:var(--background);text-align:left;color:var(--foreground);}
+.image-drop.dragging{border-color:var(--foreground);background:var(--muted);}
+.image-drop>span{flex:1;min-width:0;}
+.image-drop strong{display:block;font-size:1rem;overflow-wrap:anywhere;}
+.image-drop span span{display:block;font-size:.875rem;color:var(--muted-foreground);margin-top:.4rem;line-height:1.45;}
+.image-original{width:100px;height:64px;object-fit:contain;background:repeating-conic-gradient(#eee 0% 25%,#ccc 0% 50%) 50% / 12px 12px;border-radius:4px;}
+.image-controls{display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:center;}
+.image-controls label{font-size:.875rem;margin:0;}
+.image-controls select{display:block;width:100%;padding:.65rem;border:1px solid var(--border);border-radius:.4rem;background:var(--card);color:var(--foreground);font:inherit;margin-top:.5rem;}
+.image-controls input[type=range]{padding:0;box-shadow:none;margin:.95rem 0;accent-color:var(--foreground);}
+.image-controls label>span{float:right;color:var(--muted-foreground);}
+.image-preview{container-type:inline-size;min-height:130px;display:grid;align-items:center;}
+.image-preview>p{text-align:center;padding:2rem;font-size:1rem;color:var(--muted-foreground);}
+.image-hint{font-size:.875rem;color:var(--muted-foreground);line-height:1.5;}
+.image-actions{display:flex;justify-content:flex-end;gap:.75rem;}
+@media(max-width:600px){.image-controls{grid-template-columns:1fr 1fr;}.image-original{width:70px;}.image-drop{padding:1rem;gap:.7rem;}.image-dialog{width:calc(100vw - 1rem)!important;}}
 .compose-tabs>button,.sports-leagues>button:not(.text-button){border:1px solid var(--border);border-radius:.45rem;padding:.65rem 1.15rem;font-size:.9rem;background:var(--background);color:var(--foreground);cursor:pointer;}
 .compose-tabs>button.active,.sports-leagues>button.active{background:var(--foreground);color:var(--background);border-color:var(--foreground);}
 .visual-composer-copy{font-size:.95rem;line-height:1.6;margin:1rem 0 1.5rem;color:var(--muted-foreground);}

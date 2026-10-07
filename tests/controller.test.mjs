@@ -9,6 +9,7 @@ import ts from 'typescript';
 const root=new URL('../',import.meta.url),realRequire=createRequire(import.meta.url);
 const user={userId:'test-owner',email:'owner@example.test',fullName:'Test Owner'};
 const json=value=>JSON.parse(JSON.stringify(value));
+const scoreRequests=h=>h.requests.filter(url=>!url.includes('cloud.vestaboard.com')).length;
 const blank=()=>Array.from({length:6},()=>Array(22).fill(0));
 function harness(){
  const sql=new DatabaseSync(':memory:');
@@ -18,12 +19,12 @@ function harness(){
  const DB={prepare(query){const statement=sql.prepare(query);let args=[];return {bind(...values){args=values;return this;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){const r=statement.run(...args);return {meta:{changes:r.changes}};}};}};
  const env={DB,OWNER_EMAIL:user.email,SECRET_ENCRYPTION_KEY:Buffer.alloc(32,7).toString('base64')};
  let primaryUsed=0,backupUsed=0,primaryFailure=0,backupFailure=0,backupWrong=false,backupDuplicate=false,primaryStatusError=null,primaryStatusCode=200,primaryStatusRetry=0;
- let hardwareFailure=false,hardwareQuiet=false,hardwareStatus="ok",hardwareStale=false,cloudGrid=blank();const hardwareBodies=[];
+ let hardwareFailure=false,hardwareQuiet=false,hardwareStatus="ok",hardwareStale=false,hardwareReadFailure=false,cloudId='initial-message',cloudGrid=blank();const hardwareBodies=[];
  let score=10,state='in_progress',failure=false,home='HOM',away='AWY',possession=null,possessionFailure=false,possessionHalftime=false,possessionWrong=false;const requests=[],writes=[];
  const game=(id=101)=>({id,date:'2026-10-02',datetime:'2026-10-02T18:00:00Z',status:state==='in_progress'?'In Progress':state==='final'?'Final':state,status_state:state,period:2,time:'4:31',home_team_score:score,visitor_team_score:7,home_team:{full_name:'Test Home',abbreviation:home},visitor_team:{full_name:'Test Away',abbreviation:away}});
  const collegeId='11111111-1111-4111-8111-111111111111';
  const college=(backup=false,id=101)=>backup?{id:collegeId,sport:'american_football',league:'NCAA Football',kickoff_utc:'2026-10-02T18:00:00Z',status:state==='in_progress'?'live':state==='final'?'finished':state,home:{name:backupWrong?'Miami (OH)':'Virginia Tech'},away:{name:'Pittsburgh'},score:{home:score,away:7}}:{game:{id,date:{timestamp:Date.parse('2026-10-02T18:00:00Z')/1000},status:{short:state==='in_progress'?'Q2':state==='final'?'FT':'NS',timer:'4:31'}},teams:{home:{name:'Virginia Tech Hokies'},away:{name:'Pittsburgh Panthers'}},scores:{home:{total:score},away:{total:7}}};
- async function fetchMock(input,options={}){const url=new URL(String(input));requests.push(url.href);if(url.hostname==='cloud.vestaboard.com'){if(options.method==='POST'){const body=JSON.parse(options.body);hardwareBodies.push(body);if(hardwareFailure)return Response.json({error:'unavailable'},{status:503});if(hardwareStatus!=='ok')return Response.json({status:hardwareStatus});writes.push(body.characters);if(!hardwareStale&&(!hardwareQuiet||body.forced===true))cloudGrid=json(body.characters);return Response.json({status:'ok',id:'test-message',created:clock});}return Response.json({currentMessage:{layout:JSON.stringify(cloudGrid),id:'test-message'}});}if(url.hostname==='v1.american-football.api-sports.io'){
+ async function fetchMock(input,options={}){const url=new URL(String(input));requests.push(url.href);if(url.hostname==='cloud.vestaboard.com'){if(options.method==='POST'){const body=JSON.parse(options.body);hardwareBodies.push(body);if(hardwareFailure)return Response.json({error:'unavailable'},{status:503});if(hardwareStatus!=='ok')return Response.json({status:hardwareStatus});writes.push(body.characters);const id=`website-${writes.length}`;if(!hardwareStale&&(!hardwareQuiet||body.forced===true)){cloudGrid=json(body.characters);cloudId=id;}return Response.json({status:'ok',id,created:clock});}if(hardwareReadFailure)return Response.json({error:'unavailable'},{status:503});return Response.json({currentMessage:{layout:JSON.stringify(cloudGrid),id:cloudId}});}if(url.hostname==='v1.american-football.api-sports.io'){
   if(url.pathname==='/status')return primaryStatusError?Response.json({errors:typeof primaryStatusError==='string'?{rateLimit:primaryStatusError}:primaryStatusError},{status:primaryStatusCode,headers:primaryStatusRetry?{'Retry-After':String(primaryStatusRetry)}:{}}):Response.json({response:{subscription:{active:true},requests:{current:primaryUsed,limit_day:100}},errors:[]});
   primaryUsed++;if(primaryFailure)return Response.json({errors:{problem:'provider error with test-key'}},{status:primaryFailure});
   if(url.pathname==='/leagues')return Response.json({response:[{league:{id:2},seasons:[{year:2026,current:true}]}],errors:[]});
@@ -45,10 +46,40 @@ function harness(){
  assert.equal(url.hostname,'api.balldontlie.io');if(failure)return Response.json({error:'unavailable'},{status:503});const id=/\/games\/(\d+)$/.exec(url.pathname);return Response.json({data:id?game(Number(id[1])):url.searchParams.get('season_type')==='preseason'?[]:[game(101),game(102),game(103),game(104)],meta:{next_cursor:null}});}
  const cache={};function load(name,reload=false){if(reload)delete cache[name];if(cache[name])return cache[name];const exports={};cache[name]=exports;const code=ts.transpileModule(readFileSync(new URL(`lib/${name}.ts`,root),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;const require=specifier=>specifier==='cloudflare:workers'?{env}:specifier.startsWith('./')?load(specifier.slice(2)):realRequire(specifier);vm.runInNewContext(code,{exports,require,Date:TestDate,Intl,crypto,fetch:fetchMock,Response,URL,URLSearchParams,AbortSignal,TextEncoder,TextDecoder,Uint8Array,btoa,atob,console},{filename:name});return exports;}
  const controller=load('controller'),board=load('board'),sports=load('sports'),colors=load('team-colors');
- return {controller,board,sports,colors,sql,requests,writes,hardwareBodies,hardwareQuiet(value){hardwareQuiet=value;},hardwareStatus(value){hardwareStatus=value;},hardwareStale(value){hardwareStale=value;},cloudGrid(value){cloudGrid=json(value);},advance(ms){clock+=ms;},now(){return clock;},setScore(value){score=value;},hardwareFail(value){hardwareFailure=value;},setPossession(value){possession=value;},possessionFail(value){possessionFailure=value;},possessionHalf(value){possessionHalftime=value;},wrongPossession(value){possessionWrong=value;},collegeId,setPrimaryUsed(v){primaryUsed=v;},setBackupUsed(v){backupUsed=v;},primaryFail(v){primaryFailure=v;},primaryStatus(error,code=200,retry=0){primaryStatusError=error;primaryStatusCode=code;primaryStatusRetry=retry;},backupFail(v){backupFailure=v;},wrongBackup(v){backupWrong=v;},duplicateBackup(v){backupDuplicate=v;},load,setTeams(left,right){away=left;home=right;},setState(value){state=value;},fail(value){failure=value;},close(){sql.close();}};
+ return {controller,board,sports,colors,sql,requests,writes,hardwareBodies,hardwareQuiet(value){hardwareQuiet=value;},hardwareStatus(value){hardwareStatus=value;},hardwareStale(value){hardwareStale=value;},cloudGrid(value,id='app-message'){cloudGrid=json(value);cloudId=id;},hardwareReadFail(value){hardwareReadFailure=value;},advance(ms){clock+=ms;},now(){return clock;},setScore(value){score=value;},hardwareFail(value){hardwareFailure=value;},setPossession(value){possession=value;},possessionFail(value){possessionFailure=value;},possessionHalf(value){possessionHalftime=value;},wrongPossession(value){possessionWrong=value;},collegeId,setPrimaryUsed(v){primaryUsed=v;},setBackupUsed(v){backupUsed=v;},primaryFail(v){primaryFailure=v;},primaryStatus(error,code=200,retry=0){primaryStatusError=error;primaryStatusCode=code;primaryStatusRetry=retry;},backupFail(v){backupFailure=v;},wrongBackup(v){backupWrong=v;},duplicateBackup(v){backupDuplicate=v;},load,setTeams(left,right){away=left;home=right;},setState(value){state=value;},fail(value){failure=value;},close(){sql.close();}};
 }
 async function configured(h,hardware=false){await h.controller.getState(user);await h.controller.mutate(user,{action:'settings',settings:{quietEnabled:false,quietStart:'19:00',quietEnd:'08:00'}});if(hardware)await h.controller.mutate(user,{action:'connect',kind:'vestaboard',secret:'test-hardware-key'});}
 async function following(h,hardware=false){await configured(h,hardware);await h.controller.mutate(user,{action:'connect',kind:'sports',secret:'test-sports-key'});await h.controller.mutate(user,{action:'sports-select',league:'NFL',gameId:'101'});}
+
+test('cloud sync shows native app messages, shares its cache and survives restart without overwriting',async()=>{const h=harness();try{
+ await following(h,true);const baseline=await h.controller.getState(user),app=blank();app[2][3]=69;app[2][4]=1;h.cloudGrid(app);h.advance(61000);
+ const writes=h.writes.length,scores=scoreRequests(h);let state=await h.controller.getState(user,true);
+ assert.deepEqual(json(state.controller.hardware.grid),app);assert.deepEqual(json(state.current.grid),json(baseline.current.grid));assert.equal(state.controller.externalActive,true);
+ const calls=h.requests.length;await h.controller.getState({...user,userId:'teammate'},true);assert.equal(h.requests.length,calls);
+ h.advance(61000);await h.load('controller',true).backgroundTick();state=await h.controller.getState(user);
+ assert.equal(h.writes.length,writes);assert.equal(scoreRequests(h),scores);assert.equal(state.controller.externalActive,true);assert.equal(state.config.sportsSelection.gameId,'101');
+}finally{h.close();}});
+test('a native message during our write-settling window is never overwritten by the next score',async()=>{const h=harness();try{
+ await following(h,true);const app=h.board.formatBoard('FROM THE APP');h.advance(20000);h.cloudGrid(app);h.setScore(24);h.advance(11000);const writes=h.writes.length;
+ await h.controller.backgroundTick();let state=await h.controller.getState(user);assert.equal(h.writes.length,writes);assert.deepEqual(json(state.controller.hardware.grid),json(app));
+ h.advance(31000);await h.controller.backgroundTick();state=await h.controller.getState(user);assert.equal(state.controller.externalActive,true);assert.equal(h.writes.length,writes);
+}finally{h.close();}});
+test('paused syncing preserves the last cloud grid on failure and detects identical layouts with new IDs',async()=>{const h=harness();try{
+ await following(h,true);await h.controller.mutate(user,{action:'pause',paused:true});h.advance(61000);const own=await h.controller.getState(user);h.cloudGrid(own.current.grid,'another-app-id');
+ let state=await h.controller.getState(user,true);assert.equal(state.controller.externalActive,true);const known=json(state.controller.hardware.grid),writes=h.writes.length;
+ h.hardwareReadFail(true);h.advance(31000);state=await h.controller.getState(user,true);assert.deepEqual(json(state.controller.hardware.grid),known);assert.match(state.controller.hardware.error,/last synced/);await h.controller.backgroundTick();assert.equal(h.writes.length,writes);
+}finally{h.close();}});
+test('explicit takeover survives a failed send and retries, while a scheduled message keeps the external hold',async()=>{const h=harness();try{
+ await following(h,true);h.advance(61000);h.cloudGrid(h.board.formatBoard('APP MESSAGE'));await h.controller.getState(user,true);
+ const before=h.writes.length;await h.controller.mutate(user,{action:'message',text:'LATER',duration:60,scheduledAt:h.now()+600000});assert.equal(h.writes.length,before);assert.equal((await h.controller.getState(user)).controller.externalActive,true);
+ h.hardwareFail(true);await h.controller.mutate(user,{action:'message',text:'SEND NOW',duration:60,scheduledAt:h.now()});h.hardwareFail(false);h.advance(61000);await h.load('controller',true).backgroundTick();const state=await h.controller.getState(user);
+ assert.equal(state.current.text,'SEND NOW');assert.equal(state.controller.externalActive,false);assert.equal(h.writes.length,before+1);
+}finally{h.close();}});
+test('resume takes over an external message and read failures block automatic overwrites',async()=>{const h=harness();try{
+ await following(h,true);h.advance(61000);h.cloudGrid(h.board.formatBoard('APP MESSAGE'));await h.controller.getState(user,true);const before=h.writes.length;
+ await h.controller.mutate(user,{action:'pause',paused:false});assert.equal(h.writes.length,before+1);assert.equal((await h.controller.getState(user)).controller.externalActive,false);
+ h.advance(61000);h.hardwareReadFail(true);h.setScore(24);await h.controller.backgroundTick();assert.equal(h.writes.length,before+1);
+}finally{h.close();}});
 
 test('every message overrides native Vestaboard quiet hours and cloud readback matches the sent frame',async()=>{
  const h=harness();try{
@@ -89,7 +120,7 @@ test('malformed visual data is rejected without inserting or sending it',async()
 test('migrations preserve legacy text messages',async()=>{const h=harness();try{await configured(h);h.sql.prepare("INSERT INTO messages(id,title,text,alignment,accent,source,author,scheduled_at,duration,status,created_at) VALUES('legacy','Old note','OLD NOTE','center',0,'manual','Team',?,60,'queued',?)").run(h.now(),h.now());await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.equal(state.current.text,'OLD NOTE');assert.deepEqual(json(state.current.grid),json(h.board.formatBoard('OLD NOTE')));}finally{h.close();}});
 test('exact selected game persists across midnight and duplicate scores do not write hardware',async()=>{const h=harness();try{await following(h,true);const before=h.writes.length;h.advance(31000);await h.controller.backgroundTick();assert.equal(h.writes.length,before);h.setScore(14);h.advance(31000);await h.controller.backgroundTick();assert.equal(h.writes.length,before+1);h.advance(86400000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.deepEqual(json(state.config.sportsSelection),{league:'NFL',gameId:'101'});assert.equal(state.sports.game.id,'101');assert.ok(h.requests.filter(url=>url.includes('/games/')).every(url=>url.endsWith('/101')));}finally{h.close();}});
 test('unlisted game is rejected atomically and selected-game failures retain last scores',async()=>{const h=harness();try{await following(h);await assert.rejects(h.controller.mutate(user,{action:'sports-select',league:'NFL',gameId:'999'}),/available game/);h.fail(true);h.advance(130000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.equal(state.sports.game.home.score,10);assert.equal(state.config.sportsSelection.gameId,'101');assert.match(state.current.text,/SCORES DELAYED/);assert.ok(state.sports.error);}finally{h.close();}});
-test('canceled and abandoned games stop provider requests while retaining the terminal display',async()=>{for(const terminal of ['canceled','abandoned']){const h=harness();try{h.setState(terminal);await following(h,true);const before=h.writes.length,count=h.requests.length;h.advance(86400000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.match(state.current.text,new RegExp(terminal.toUpperCase()));assert.doesNotMatch(state.current.text,/DELAYED/);assert.equal(h.writes.length,before);assert.equal(h.requests.length,count);}finally{h.close();}}});
+test('canceled and abandoned games stop provider requests while retaining the terminal display',async()=>{for(const terminal of ['canceled','abandoned']){const h=harness();try{h.setState(terminal);await following(h,true);const before=h.writes.length,count=h.requests.filter(u=>!u.includes('cloud.vestaboard.com')).length;h.advance(86400000);await h.controller.backgroundTick();const state=await h.controller.getState(user);assert.match(state.current.text,new RegExp(terminal.toUpperCase()));assert.doesNotMatch(state.current.text,/DELAYED/);assert.equal(h.writes.length,before);assert.equal(h.requests.filter(u=>!u.includes('cloud.vestaboard.com')).length,count);}finally{h.close();}}});
 test('free provider budget is shared and prevents a sixth request inside a minute',async()=>{const h=harness();try{await following(h);await h.controller.getSportsGames(user,'NBA');await h.controller.mutate(user,{action:'sports-select',league:'NFL',gameId:'102'});const count=h.requests.filter(url=>url.includes('balldontlie')).length;assert.equal(count,5);await assert.rejects(h.controller.mutate(user,{action:'sports-select',league:'NFL',gameId:'103'}),/Try again in a minute/);assert.equal(h.requests.filter(url=>url.includes('balldontlie')).length,5);h.advance(61000);await h.controller.mutate(user,{action:'sports-select',league:'NFL',gameId:'103'});assert.equal((await h.controller.getState(user)).sports.game.id,'103');}finally{h.close();}});
 test('fresh catalogs are reused and failed catalogs retain their original freshness',async()=>{const h=harness();try{await configured(h);await h.controller.mutate(user,{action:'connect',kind:'sports',secret:'test-sports-key'});const first=await h.controller.getSportsGames(user,'NFL'),count=h.requests.length;await h.controller.getSportsGames(user,'NFL');assert.equal(h.requests.length,count);h.advance(121000);h.fail(true);const failed=await h.controller.getSportsGames(user,'NFL');assert.equal(failed.fetchedAt,first.fetchedAt);assert.equal(failed.games.length,first.games.length);assert.ok(failed.error);}finally{h.close();}});
 test('pause and manual hold preserve hardware display while sports keep their selection',async()=>{const h=harness();try{await following(h,true);await h.controller.mutate(user,{action:'pause',paused:true});const before=h.writes.length;h.setScore(17);h.advance(31000);await h.controller.backgroundTick();assert.equal(h.writes.length,before);await h.controller.mutate(user,{action:'pause',paused:false});h.advance(31000);await h.controller.mutate(user,{action:'message',text:'TEAM NOTE',alignment:'center',accent:0,duration:60,scheduledAt:h.now()});h.advance(31000);h.setScore(20);await h.controller.backgroundTick();assert.equal((await h.controller.getState(user)).current.text,'TEAM NOTE');h.advance(31000);await h.controller.backgroundTick();assert.equal((await h.controller.getState(user)).current.source,'sports');}finally{h.close();}});
@@ -182,14 +213,14 @@ for(const feed of ['NFL','NBA','api-sports','big-balls']){
    assert.equal(state.sports.game.state,'final');assert.equal(state.sports.game.home.score,24);
    if(college)assert.equal(state.sports.game.provider,feed);
    assert.match(state.current.text,/FINAL/);
-   const count=h.requests.length,writes=h.writes.length,updatedAt=state.sports.updatedAt,selection=json(state.config.sportsSelection);
+   const count=scoreRequests(h),writes=h.writes.length,updatedAt=state.sports.updatedAt,selection=json(state.config.sportsSelection);
    // New controller instance reads the persisted terminal result, not a process flag.
    const restarted=h.load('controller',true);
    h.fail(true);h.primaryFail(503);h.backupFail(503);
    for(const elapsed of [31000,600000,3600000,86400000]){
     h.advance(elapsed);await restarted.backgroundTick();await restarted.mutate(user,{action:'refresh'});
     state=await restarted.getState(user);
-    assert.equal(h.requests.length,count);assert.equal(h.writes.length,writes);
+    assert.equal(scoreRequests(h),count);assert.equal(h.writes.length,writes);
     assert.equal(state.sports.updatedAt,updatedAt);assert.equal(state.sports.error,null);
     assert.deepEqual(json(state.config.sportsSelection),selection);assert.equal(state.sports.game.home.score,24);
     assert.match(state.current.text,/FINAL/);assert.doesNotMatch(state.current.text,/DELAYED/);
@@ -199,9 +230,9 @@ for(const feed of ['NFL','NBA','api-sports','big-balls']){
    const league=college?'NFL':feed;
    if(college)await restarted.mutate(user,{action:'connect',kind:'sports',secret:'test-sports-key'});
    await restarted.mutate(user,{action:'sports-select',league,gameId:'102'});
-   const resumed=h.requests.length;assert.ok(resumed>count);
+   const resumed=scoreRequests(h);assert.ok(resumed>count);
    h.setScore(31);h.advance(31000);await restarted.backgroundTick();
-   assert.ok(h.requests.length>resumed);state=await restarted.getState(user);
+   assert.ok(scoreRequests(h)>resumed);state=await restarted.getState(user);
    assert.equal(state.sports.game.id,'102');assert.equal(state.sports.game.home.score,31);
   }finally{h.close();}
  });
@@ -245,7 +276,7 @@ test('college possession updates every thirty seconds without spending extra col
   assert.equal(h.requests.filter(u=>u.includes('api-sports.io')||u.includes('bigballsdata.com')).length,scoreCalls);
   h.possessionHalf(true);h.advance(31000);await h.controller.backgroundTick();assert.doesNotMatch(scoreRow(h,await h.controller.getState(user)),/■/);
   h.possessionHalf(false);h.wrongPossession(true);h.advance(31000);await h.controller.backgroundTick();assert.doesNotMatch(scoreRow(h,await h.controller.getState(user)),/■/);
-  await h.controller.mutate(user,{action:'pause',paused:true});const requests=h.requests.length;h.advance(31000);await h.controller.backgroundTick();assert.equal(h.requests.length,requests);
+  await h.controller.mutate(user,{action:'pause',paused:true});const requests=scoreRequests(h);h.advance(31000);await h.controller.backgroundTick();assert.equal(scoreRequests(h),requests);
  }finally{h.close();}
 });
 test('possession is never guessed from a last play and rejects mismatched, ambiguous or terminal data',()=>{
