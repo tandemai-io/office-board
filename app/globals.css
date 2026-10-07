@@ -86,3 +86,10 @@
 @media(max-width:600px){.games-grid{grid-template-columns:1fr;}.sports-dialog{width:calc(100vw - 1rem)!important;}.following-game{align-items:flex-start;flex-direction:column;}.following-game>div:last-child{flex-direction:row;}.visual-palette{gap:.5rem;}.paint-color{width:1.8rem;height:1.8rem;}.editor-tool{width:2.3rem;height:2.3rem;}}
 
 .mode-grid.single-mode{grid-template-columns:1fr}.single-mode .mode-button{display:flex;align-items:center;gap:14px;padding:18px}.single-mode .mode-button>div{display:block;flex:1;margin:0;color:var(--foreground)}.single-mode .mode-button strong{margin-bottom:5px}.single-mode .mode-button>svg{flex-shrink:0;color:var(--muted-foreground)}
+
+.image-adjustments{display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:center;font-size:.875rem;}
+.image-adjustments label{margin:0;}
+.image-adjustments label>span{float:right;color:var(--muted-foreground);}
+.image-adjustments input[type=range]{accent-color:var(--foreground);padding:0;box-shadow:none;margin:.7rem 0;}
+.image-adjustments .image-trim{display:flex;align-items:center;gap:.6rem;}
+.image-adjustments input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--foreground);}
