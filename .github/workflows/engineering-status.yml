@@ -1,0 +1,51 @@
+name: Engineering status
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '3-58/5 * * * *'
+permissions: {}
+concurrency:
+  group: engineering-status
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check production status and update the board
+        env:
+          BOARD_URL: ${{ vars.BOARD_URL }}
+          ENGINEERING_RUNNER_TOKEN: ${{ secrets.ENGINEERING_RUNNER_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.request, urllib.error
+          from urllib.parse import urlsplit
+          origin = os.environ['BOARD_URL'].rstrip('/')
+          token = os.environ['ENGINEERING_RUNNER_TOKEN']
+          if urlsplit(origin).scheme != 'https' or not token:
+              sys.exit('Configure the board URL and engineering runner token.')
+          headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token,
+                     'User-Agent': 'Tandem-Office-Board-Runner/1.0'}
+          for attempt in range(3):
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(origin + '/api/engineering', data=b'{}', headers=headers), timeout=40) as response:
+                      result = json.load(response)
+                  if not result.get('ok'):
+                      sys.exit('The engineering check could not complete.')
+                  print(json.dumps({'ok': True, 'health': result['health']['status'],
+                                    'deployments': {d['label']: d['status'] for d in result['deployments']},
+                                    'following': result['following']}))
+                  if result.get('boardError'):
+                      sys.exit('The status was saved, but the board needs attention.')
+                  break
+              except urllib.error.HTTPError as error:
+                  if error.code in (409, 500, 502, 503, 504) and attempt < 2:
+                      time.sleep(25)
+                      continue
+                  sys.exit('Engineering check returned HTTP ' + str(error.code))
+              except (TimeoutError, urllib.error.URLError):
+                  if attempt < 2:
+                      time.sleep(10)
+                      continue
+                  sys.exit('Could not reach the Office Board.')
+          PY

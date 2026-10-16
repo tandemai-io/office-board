@@ -1,0 +1,19 @@
+"use client";
+import {Activity,CheckCircle2,AlertCircle,Clock3,ExternalLink} from 'lucide-react';
+import Board from './board-preview';
+import {engineeringScene,deploymentStatus,type EngineeringState} from '@/lib/engineering';
+import {formatBoard} from '@/lib/board';
+export default function EngineeringPanel({state,following,held,paused,interrupted,displayed,busy,onFollow,onStop}:{state:EngineeringState;following:boolean;held:boolean;paused:boolean;interrupted:boolean;displayed:boolean;busy:boolean;onFollow:()=>void;onStop:()=>void}){
+ const scene=engineeringScene(state),time=(at:number|null)=>at?new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/Los_Angeles'}).format(at):'Not checked yet';
+ const labels={queued:'Queued',deploying:'In progress',succeeded:'Succeeded',failed:'Failed',cancelled:'Cancelled / skipped',unknown:'Unknown'};
+ return <section className="panel engineering-panel">
+  <div className="section-heading"><div><p className="eyebrow">ENGINEERING & SYSTEM HEALTH</p><h2>Production, at a glance</h2></div><span className={`subtle-tag ${state.connected?'success':''}`}>{state.connected?'Connected':'Not connected'}</span></div>
+  <p className="small-copy">{state.repository?`${state.repository} · ${state.branch}`:'Connect a repository to follow production.'}</p>
+  <div className="engineering-layout"><div>
+   <div className={`engineering-status ${state.health.status}`}><Activity size={19}/><div><strong>Production API</strong><p>{!state.healthConfigured?'Not monitored':state.health.status==='up'?'Reachable':state.health.status==='down'?'Health check failed':'Status unknown'}</p>{state.health.reason&&<p className="small-copy">{state.health.reason}</p>}<small>{time(state.health.checkedAt)}{state.health.sha?` · ${state.health.sha}`:''}</small></div></div>
+   {state.deployments.map(d=>{const status=deploymentStatus(d);return <div className={`engineering-status ${status}`} key={d.workflow}>{status==='succeeded'?<CheckCircle2 size={19}/>:status==='failed'?<AlertCircle size={19}/>:<Clock3 size={19}/>}<div><strong>{d.label==='CI'?'Main-branch CI':`${d.label[0]}${d.label.slice(1).toLowerCase()} deployment`}</strong><p>{labels[status]}</p><small>{d.updatedAt?time(d.updatedAt):'Waiting for an update'}{d.sha?` · ${d.sha}`:''}</small></div>{d.url&&<a href={d.url} target="_blank" rel="noreferrer" aria-label={`View ${d.label} workflow run`}><ExternalLink size={16}/></a>}</div>;})}
+   <p className="small-copy">The API check confirms the server responds. CI and deployment results are tracked separately.</p>
+  </div><div><Board grid={formatBoard(scene.text,scene.alignment,scene.accent)} label="Engineering board preview"/><div className="recurring-actions"><button className="button primary" disabled={busy||!state.connected||paused||(following&&!held)} onClick={onFollow}>{paused?'Board updates paused':following?(held?'Resume on board':interrupted?'Resumes after message':displayed?'Showing on board':'Waiting to update'):'Show on board'}</button>{following&&<button className="text-button" disabled={busy} onClick={onStop}>Stop following</button>}</div><p className="small-copy">{paused?'Resume updates on the Board tab to continue. ':''}Standup and team messages take priority. Messages from the Vestaboard app stay until you choose to resume.</p></div></div>
+  <div className="notice"><Clock3 size={15}/><span>{state.runnerActive?'Background checks are active. API checks run about every 5 minutes; GitHub sends new workflow events as they happen.':'Background checks are not active or are delayed. Status becomes unknown when checks are stale.'} Two consecutive failed API checks flag a problem. {state.lastBackground?`Last background check: ${time(state.lastBackground)} Pacific.`:''}</span></div>
+ </section>;
+}
