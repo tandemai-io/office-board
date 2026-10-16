@@ -1,0 +1,5 @@
+import {authorizedController,runStandupSchedule,getStandupSchedule,BoardError} from '@/lib/controller';
+export const dynamic='force-dynamic';
+const respond=(body:unknown,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
+export async function GET(request:Request){if(!await authorizedController(request))return respond({error:'Unauthorized.'},401);try{return respond(await getStandupSchedule());}catch{return respond({error:'Schedule status is unavailable.'},503);}}
+export async function POST(request:Request){if(!await authorizedController(request))return respond({error:'Unauthorized.'},401);try{const raw=await request.text();if(raw.length>200)return respond({error:'Request is too large.'},413);const body=JSON.parse(raw||'{}');if(body.action&&body.action!=='tick'&&body.action!=='runner-ready')return respond({error:'Unknown schedule action.'},400);return respond(await runStandupSchedule(body.action==='runner-ready'));}catch(error){return respond({error:error instanceof BoardError?error.message:'The schedule could not run.'},error instanceof BoardError?error.status:500);}}
