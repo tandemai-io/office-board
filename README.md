@@ -1,6 +1,6 @@
 # Tandem Office Board
 
-A private, shared Vestaboard controller with a 22 × 6 preview, messages, schedules, four modes, PR updates and NBA, NFL and college football scores. It can run without Vestaboard Plus. Team messages and settings live in Cloudflare D1; provider keys are encrypted with AES-GCM and only decrypted by the server.
+A shared, sign-in-protected Vestaboard controller with a 22 × 6 preview, messages, schedules, four modes, PR updates and NBA, NFL and college football scores. It can run without Vestaboard Plus. Team messages and settings live in Cloudflare D1; provider keys are encrypted with AES-GCM and only decrypted by the server.
 
 ## Connect it
 
@@ -10,7 +10,7 @@ A private, shared Vestaboard controller with a 22 × 6 preview, messages, schedu
 4. For college football, connect free API-Sports and Big Balls keys in their Primary/Backup cards. Click **Sports → College football** to pick a game from today’s FBS schedule. The primary switches to the backup when its free budget has 10 requests left or it is unavailable.
 5. Share the private Site with selected teammates using the Site's sharing controls. The configured owner manages connections and defaults; other authorized visitors can send, schedule, pause and select modes.
 
-Manual Send Now takes priority. Scheduled messages and integration events wait for the active hold. Physical requests are serialized and spaced by at least 20 seconds. Quiet hours prevent writes, and messages remain queued. Meeting and Guests modes suppress PR events. PR events older than 30 minutes expire instead of replaying a stale celebration.
+Manual Send Now takes priority. Scheduled messages and integration events wait for the active hold. Physical requests are serialized and spaced by at least 20 seconds. Quiet hours are disabled; pause the controller to stop its writes. Meeting and Guests modes suppress PR events. PR events older than 30 minutes expire instead of replaying a stale celebration.
 
 GitHub polling can identify a PR's author and the person who merged it. Generic `updated_at` also changes for comments and reviews; an update is labeled **PR updated / author**, never as a verified push actor. Accurate last-pusher attribution is a follow-up webhook integration.
 
@@ -49,11 +49,17 @@ npm install
 
 Create an ignored `.env.local` containing `OWNER_EMAIL=seedy@sites.test`, a random 32-byte base64 `SECRET_ENCRYPTION_KEY`, and a random `CONTROLLER_TOKEN`. Production values are configured in Sites, never in source.
 
+Build the local Worker, then initialize a fresh local database by applying every migration in filename order:
+
 ```sh
 npm run build
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_fair_aaron_stack.sql
+for migration in drizzle/*.sql; do
+  node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file "$migration" || exit 1
+done
 npm run dev
 ```
+
+Run that migration loop only once for a fresh database. For an existing local database, apply only migrations that have not already run. Keep the same `.wrangler/state` directory when starting the app.
 
 Open the printed localhost URL at `/signin-with-chatgpt?return_to=%2F` for the bundled local mock identity. Mock authentication is restricted to local preview; hosted authentication is supplied by Sites.
 
@@ -64,6 +70,12 @@ node --test tests/*.test.mjs
 ```
 
 Production schema changes belong in `db/schema.ts` plus append-only generated Drizzle migrations. Native Sites publishing applies migrations, configures D1 and deploys the Worker. `build/sites-worker.ts` preserves the platform fetch handler. Do not put credentials into Git, browser storage, URLs or the hosting manifest.
+
+## Contributing
+
+Ideas, new board features and fixes are welcome. [Open an issue](https://github.com/tandemai-io/office-board/issues) or fork the repository and open a pull request against `main`. Include what changes, a screenshot for visual changes and how you checked it. Before submitting, run the type check, lint and test commands above; use Node 25+ for the controller tests. Run `npm run build` for application changes.
+
+Develop against your own local database and mock identity. Provider keys are optional for previews, and the controller tests use mocked providers. Public source access does not grant access to the live office dashboard or board: the hosted app still uses Sites sign-in and sharing controls. Keep provider calls on the server, credentials encrypted, connection changes owner-only and board writes behind the shared controller lease. Changes must preserve shared state, queued messages and coordination between teammates and background runs. Never include real keys, private messages or production database exports in an issue, pull request or test fixture.
 
 ## API
 
